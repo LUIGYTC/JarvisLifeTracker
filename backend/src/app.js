@@ -2,6 +2,7 @@ import http from 'node:http';
 import { ALLOWED_ORIGINS } from './config.js';
 import { createVerifier } from './verify.js';
 import { createSheetsCheck } from './sheets.js';
+import { createDashboardReader } from './dashboard.js';
 import { createMovementWriter } from './sheets-write.js';
 import { movimientoRow, readMovementBody } from './movimientos.js';
 
@@ -22,7 +23,7 @@ export function bearerToken(req) {
 }
 
 export function createApp({ authorizedSub = '', verify = createVerifier(), verificationTimeoutMs = 10000,
-  checkSheets = createSheetsCheck(), writeMovement = createMovementWriter() } = {}) {
+  checkSheets = createSheetsCheck(), writeMovement = createMovementWriter(), readDashboard = createDashboardReader() } = {}) {
   const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000 }, async (req, res) => {
     try {
       res.setHeader('Vary', 'Origin');
@@ -32,7 +33,7 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
       }
       if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
       const method = ['/auth/me', '/api/movimientos'].includes(req.url) ? 'POST'
-        : ['/health', '/api/sheets/status'].includes(req.url) ? 'GET' : null;
+        : ['/health', '/api/sheets/status', '/api/dashboard'].includes(req.url) ? 'GET' : null;
       if (!method) return reply(res, 404, { error: 'not_found' });
       if (req.method === 'OPTIONS') {
         const requested = (req.headers['access-control-request-headers'] || '')
@@ -72,6 +73,10 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
       }
       if (!authorizedSub) return reply(res, 503, { error: 'authorization_unavailable' });
       if (sub !== authorizedSub) return reply(res, 403, { error: 'not_authorized' });
+      if (req.url === '/api/dashboard') {
+        try { return reply(res, 200, await readDashboard()); }
+        catch { return reply(res, 503, { error: 'dashboard_unavailable' }); }
+      }
       if (req.url === '/api/movimientos') {
         if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(req.headers['content-type'] || '') ||
             req.headers['content-encoding']) return reply(res, 415, { error: 'unsupported_media_type' });

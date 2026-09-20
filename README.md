@@ -77,6 +77,12 @@ La validación y autorización están implementadas en backend y requieren confi
 
 ## Preparación de autenticación
 
+El dashboard autenticado consulta `GET /api/dashboard`, con fuente exclusiva
+`MovimientosDemo`, después de autorizar y confirmar Sheets conectado. Muestra
+ingresos, gastos, balance, tres gráficas y 20 movimientos recientes. No escribe ni
+lee Movimientos. Contrato, formatos aceptados y revisión antes de desplegar:
+[docs/dashboard.md](docs/dashboard.md). La caché frontend de esta etapa es 2.3.6.
+
 El backend también ofrece `POST /api/movimientos` para añadir una fila estructurada
 en la hoja fija Movimientos, con autorización, validación estricta y texto literal
 RAW. No hay formulario ni conexión de la demo a datos reales. El contrato y la

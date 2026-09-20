@@ -13,7 +13,7 @@ test('temporary write UI and fixed payload are absent from frontend assets', () 
   }
 });
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl } = {}) {
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
@@ -46,7 +46,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   function mount() {
     const elements = Object.fromEntries(['button', 'status', 'retry', 'clear'].map(key =>
       [key, { hidden: false, textContent: '', clientWidth: 260, replaceChildren() {} }]));
-    const dispose = window.JarvisAuth.mount(elements);
+    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard });
     return { ...elements, dispose };
   }
   return { window, navigator, events, scripts, timers, calls, id, mount };
@@ -379,4 +379,62 @@ test('Sheets timeout aborts the request and permits a fresh login', async () => 
   assert.match(ui.status.textContent, /No se pudo comprobar la conexión con Google Sheets\./);
   assert.equal(ui.button.hidden, false);
   assert.equal(h.timers.size, 0);
+});
+
+test('dashboard loads only after authorization and connected Sheets with the same in-memory token', async () => {
+  const requests = [], events = [];
+  const data = { summary: { movimientos: 0 } };
+  const h = harness({ apiBaseUrl: 'https://api.example.test', onDashboard: (...args) => events.push(args), fetchImpl: async (url, options) => {
+    requests.push(url);
+    assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
+    assert.equal(options.cache, 'no-store'); assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error');
+    return { status: 200, json: async () => url.endsWith('/auth/me') ? { authenticated: true, authorized: true }
+      : url.endsWith('/api/sheets/status') ? { connected: true } : data };
+  } });
+  const ui = h.mount(); await settle(); h.calls.button.click_listener();
+  await h.calls.config.callback({ credential: 'synthetic-test-value' });
+  assert.deepEqual(requests.map(url => new URL(url).pathname), ['/auth/me', '/api/sheets/status', '/api/dashboard']);
+  assert.deepEqual(events.slice(-2), [['loading'], ['loaded', data]]);
+  h.events.pagehide(); assert.deepEqual(events.at(-1), ['reset']);
+  assert.equal(h.timers.size, 0);
+});
+
+test('dashboard errors stay generic and late reads cannot restore discarded data', async () => {
+  for (const mode of ['error', 'discard', 'demo', 'offline', 'pagehide']) {
+    const events = []; let finish; let signal;
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onDashboard: state => events.push(state), fetchImpl: async (url, options) => {
+      if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+      signal = options.signal;
+      if (mode === 'error') throw new Error('private');
+      return new Promise(resolve => { finish = resolve; });
+    } });
+    const ui = h.mount(); await settle(); h.calls.button.click_listener();
+    const pending = h.calls.config.callback({ credential: 'synthetic-test-value' });
+    await settle();
+    if (mode !== 'error') {
+      if (mode === 'discard') ui.clear.onclick();
+      if (mode === 'demo') ui.dispose();
+      if (mode === 'offline') { h.navigator.onLine = false; h.events.offline(); }
+      if (mode === 'pagehide') h.events.pagehide();
+      assert.equal(signal.aborted, true);
+      finish({ status: 200, json: async () => ({ private: 'not displayed' }) });
+    }
+    await pending;
+    assert.equal(events.includes('loaded'), false);
+    assert.equal(events.at(-1), mode === 'error' ? 'error' : 'reset');
+  }
+});
+
+test('failed authorization or Sheets connectivity never requests dashboard', async () => {
+  for (const failAt of ['/auth/me', '/api/sheets/status']) {
+    const paths = [];
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onDashboard: () => {}, fetchImpl: async url => {
+      const pathname = new URL(url).pathname; paths.push(pathname);
+      return pathname === failAt ? { status: 403 } : { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+    } });
+    const ui = h.mount(); await settle(); h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    assert.equal(paths.includes('/api/dashboard'), false);
+  }
 });

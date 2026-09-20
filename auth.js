@@ -10,6 +10,7 @@
   let generation = 0;
 
   function clearCredential() {
+    view?.onDashboard?.('reset');
     credential = null;
     accepting = false;
     generation++;
@@ -95,6 +96,23 @@
             throw new Error('Unexpected Sheets response');
           }
           current.status.textContent = `${authorizedMessage} Google Sheets conectado.`;
+          if (current.onDashboard) {
+            current.onDashboard('loading');
+            clearTimeout(timer);
+            timer = setTimeout(() => controller.abort(), 12000);
+            try {
+              const result = await fetch(new URL('/api/dashboard', endpoint).href, {
+                method: 'GET', headers: { Authorization: `Bearer ${credential}` },
+                credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal
+              });
+              if (result.status !== 200) throw new Error('Dashboard unavailable');
+              const dashboard = await result.json();
+              if (attempt !== generation || view !== current || controller.signal.aborted) return;
+              current.onDashboard('loaded', dashboard);
+            } catch {
+              if (attempt === generation && view === current) current.onDashboard('error');
+            }
+          }
         } catch {
           if (attempt === generation && view === current) {
             current.status.textContent = `${authorizedMessage} No se pudo comprobar la conexión con Google Sheets.`;
@@ -190,9 +208,9 @@
     }
   }
 
-  function mount({ button, status, retry, clear }) {
+  function mount({ button, status, retry, clear, onDashboard }) {
     clearCredential();
-    const current = { button, status, retry, clear };
+    const current = { button, status, retry, clear, onDashboard };
     view = current;
     clear.hidden = true;
     retry.onclick = () => prepare(current);
