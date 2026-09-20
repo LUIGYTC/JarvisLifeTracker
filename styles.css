@@ -16,6 +16,7 @@
 .demo-button{background:#172033;color:#f8fafc;border:1px solid #667085}
 .google:focus-visible{outline:2px solid #f8fafc;outline-offset:4px}
 #auth-status{color:#98a2b3}
+.dashboard-nav{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:0}.dashboard-nav button{padding:10px 16px;border-radius:12px;cursor:pointer}.dashboard-nav button:focus-visible{outline:2px solid #f8fafc;outline-offset:4px}#dashboard-data:focus{outline:none}
 body:has(#dashboard-data:not(:empty)) .login{min-height:auto;padding-bottom:8px}
 .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.chart-row,.day{margin:18px 0}.chart-label{display:flex;justify-content:space-between;gap:16px;margin:8px 0;overflow-wrap:anywhere}.track{height:10px;background:#273244;border-radius:8px;overflow:hidden}.fill{height:100%;background:#79a8ff;border-radius:8px}.fill.income{background:#6ed9ab}.daily-chart{max-height:420px;overflow:auto;padding-right:12px}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:14px 10px;border-bottom:1px solid #273244;font-size:14px}th{color:#98a2b3}td{overflow-wrap:anywhere}td:nth-child(2){min-width:180px}.financial-dashboard h2{font-size:18px}.financial-dashboard .value{overflow-wrap:anywhere}@media(max-width:650px){.chart-grid{grid-template-columns:1fr}.financial-dashboard .top{flex-wrap:wrap}}body:has(.financial-dashboard) .login{min-height:auto;padding-bottom:8px}
 #google-signin{display:flex;justify-content:center;min-height:44px;margin-top:14px;max-width:100%}
