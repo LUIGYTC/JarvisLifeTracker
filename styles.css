@@ -10,3 +10,10 @@
 .pwa-panel button:focus-visible,.pwa-panel summary:focus-visible{outline:2px solid #f8fafc;outline-offset:4px}
 .login{min-height:calc(100svh - 145px)}
 @media(max-width:520px){.pwa-panel{padding-left:18px;padding-right:18px}}
+
+/* Pending authentication is distinct from the public demo. */
+.google:disabled{opacity:.55;cursor:not-allowed}
+.demo-button{background:#172033;color:#f8fafc;border:1px solid #667085}
+.google:focus-visible{outline:2px solid #f8fafc;outline-offset:4px}
+#auth-status{color:#98a2b3}
+#google-signin{display:flex;justify-content:center;min-height:44px;margin-top:14px;max-width:100%}

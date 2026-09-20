@@ -1,10 +1,10 @@
 ﻿// Increment VERSION whenever a precached file changes; deploy all files together.
-const VERSION = '2.0.0';
+const VERSION = '2.3.0';
 const BASE = new URL('./', self.location.href);
 const PREFIX = `jarvislifetracker:${BASE.pathname}:`;
 const CACHE = `${PREFIX}${VERSION}`;
 const ASSETS = [
-  './', './index.html', './styles.css', './app.js', './pwa.js',
+  './', './index.html', './styles.css', './app.js', './config.js', './auth.js', './pwa.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'
 ].map(path => new URL(path, BASE).href);
 
@@ -45,7 +45,10 @@ self.addEventListener('message', event => {
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== 'GET' || url.origin !== BASE.origin) return;
+  // Authenticated/no-store requests bypass even URLs matching static assets.
+  // The API must also send Cache-Control: no-store for the HTTP cache.
+  if (request.method !== 'GET' || url.origin !== BASE.origin ||
+      request.headers.has('Authorization') || request.cache === 'no-store') return;
   const isEntry = request.mode === 'navigate' &&
     (url.pathname === BASE.pathname || url.pathname === `${BASE.pathname}index.html`);
   // Cache only the static shell, never arbitrary requests or future private data.

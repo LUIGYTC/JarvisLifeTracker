@@ -1,0 +1,81 @@
+import http from 'node:http';
+import { ALLOWED_ORIGINS } from './config.js';
+import { createVerifier } from './verify.js';
+
+export function reply(res, status, body) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer'
+  });
+  res.end(body === undefined ? undefined : JSON.stringify(body));
+}
+
+export function bearerToken(req) {
+  if ((req.headersDistinct.authorization || []).length !== 1) return null;
+  const match = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i.exec(req.headers.authorization || '');
+  return match && match[1].length <= 12000 ? match[1] : null;
+}
+
+export function createApp({ authorizedSub = '', verify = createVerifier(), verificationTimeoutMs = 10000 } = {}) {
+  const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000 }, async (req, res) => {
+    try {
+      res.setHeader('Vary', 'Origin');
+      const origin = req.headers.origin;
+      if (origin !== undefined && !ALLOWED_ORIGINS.has(origin)) {
+        return reply(res, 403, { error: 'origin_not_allowed' });
+      }
+      if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+      const method = req.url === '/auth/me' ? 'POST' : req.url === '/health' ? 'GET' : null;
+      if (!method) return reply(res, 404, { error: 'not_found' });
+      if (req.method === 'OPTIONS') {
+        const requested = (req.headers['access-control-request-headers'] || '')
+          .split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+        if (!origin || req.headers['access-control-request-method'] !== method ||
+            requested.some(value => value !== 'authorization' && value !== 'content-type')) {
+          return reply(res, 403, { error: 'preflight_denied' });
+        }
+        res.setHeader('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
+        res.setHeader('Access-Control-Allow-Methods', method);
+        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+        return reply(res, 204);
+      }
+      if (req.method !== method) {
+        res.setHeader('Allow', `${method}, OPTIONS`);
+        return reply(res, 405, { error: 'method_not_allowed' });
+      }
+      if (req.url === '/health') return reply(res, 200, { ok: true });
+      const token = bearerToken(req);
+      if (!token) return reply(res, 401, { error: 'invalid_identity' });
+      // Authorization header only: no tokens accepted from request bodies or URLs.
+      if (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) > 0) {
+        return reply(res, 400, { error: 'body_not_allowed' });
+      }
+      let sub;
+      let timer;
+      try {
+        sub = await Promise.race([
+          verify(token),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), verificationTimeoutMs); })
+        ]);
+      } catch {
+        // Never log the library error: it can include the JWT or claims.
+        return reply(res, 401, { error: 'invalid_identity' });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!authorizedSub) return reply(res, 503, { error: 'authorization_unavailable' });
+      if (sub !== authorizedSub) return reply(res, 403, { error: 'not_authorized' });
+      return reply(res, 200, { authenticated: true, authorized: true });
+    } catch {
+      if (!res.headersSent) reply(res, 500, { error: 'internal_error' });
+      else res.end();
+    }
+  });
+  // Avoid default diagnostic output containing malformed request material.
+  server.on('clientError', (_, socket) => {
+    socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nCache-Control: no-store\r\nContent-Length: 0\r\n\r\n');
+  });
+  return server;
+}
