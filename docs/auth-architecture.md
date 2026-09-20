@@ -1,7 +1,7 @@
 # Arquitectura de autenticación de Jarvis
 
-Estado: GIS frontend y API Node local implementados. Sin Cloud Run desplegado,
-Sheets ni datos privados. La cuenta única requiere configuración privada: nunca
+Estado: GIS frontend y API Node implementados, con URL de Cloud Run configurada
+para GitHub Pages. Sin Sheets ni datos privados conectados. La cuenta única requiere configuración privada: nunca
 se autoriza automáticamente a la primera cuenta que inicia sesión.
 
 ```text
@@ -37,8 +37,10 @@ La credencial vive en un cierre hasta terminar la petición y entonces se descar
 No se guarda en localStorage, sessionStorage, IndexedDB, cookies propias o archivos.
 No se imprime, decodifica ni exporta. Google gestiona sus propias cookies de sesión.
 
-config.js define solo URL pública: loopback desde localhost:8000, vacía en GitHub
-Pages hasta configurar Cloud Run. No se toma de parámetros de página ni respuestas.
+config.js define solo URL pública: `http://127.0.0.1:8080` desde `http://localhost:8000`
+y `https://jarvislifetracker-505633966366.northamerica-south1.run.app` desde
+`https://luigytc.github.io`; queda vacía en otros orígenes.
+No se toma de parámetros de página ni respuestas.
 Fuera de loopback se exige HTTPS. Peticiones con credentials: omit, cache: no-store,
 redirect: error y timeout; token solo al /auth/me del origen configurado. Solo un
 200 con ambos booleanos verdaderos y sin campos adicionales confirma autorización.
@@ -82,13 +84,13 @@ en privado; no debe pegar tokens o el identificador aquí ni en Git.
 | OAuth Client Secret | No se usa |
 | ID Sheet/rangos/identidad de servicio | Configuración privada de una fase futura |
 
-## Cloud Run y Sheets posteriores
+## Cloud Run y conexión posterior a Sheets
 
 Contenedor Node 24, usuario node no-root, escucha PORT en 0.0.0.0 sin archivos
-privados ni bootstrap. Cloud Run termina TLS. La API será invocable por navegador
-y autorizará en su código; no confundir audiencia OAuth GIS con IAM Cloud Run.
+privados ni bootstrap. Cloud Run termina TLS. La API es invocable por navegador
+y autoriza en su código; no confundir audiencia OAuth GIS con IAM Cloud Run.
 
 Solo posteriormente el backend accederá a una hoja privada con identidad adjunta,
 permisos mínimos y rangos fijos. Nunca se publicará la hoja ni se enviarán credenciales
 de servicio al frontend. No habrá proxy de hojas arbitrarias. No se crean recursos
-externos ni se despliega en esta fase.
+externos adicionales para conectar el frontend al servicio existente.

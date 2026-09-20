@@ -1,4 +1,4 @@
-# Backend local de Jarvis
+# Backend de Jarvis
 
 Node.js 24, HTTP nativo y una dependencia directa: `google-auth-library`. La
 librería oficial verifica firma, audiencia, emisor y tiempo usando claves públicas
@@ -80,7 +80,7 @@ El servidor estático normal solo sirve recursos públicos permitidos, nunca bac
    ```
 
 4. Abre exactamente `http://localhost:8000/`. Si hay una PWA anterior, pulsa
-   «Actualizar» o cierra sus pestañas y vuelve a abrirla para activar versión 2.3.0.
+   «Actualizar» o cierra sus pestañas y vuelve a abrirla para activar versión 2.3.1.
 5. Google Sign-In envía `POST http://127.0.0.1:8080/auth/me` con Bearer desde memoria,
    sin cookies, cuerpo ni redirects. La cuenta permitida obtiene **«Identidad validada;
    usuario autorizado por el backend. Todavía no hay datos privados conectados.»**
@@ -89,10 +89,11 @@ El servidor estático normal solo sirve recursos públicos permitidos, nunca bac
 7. Descartar o entrar a demo invalida respuestas en vuelo. No exportes solicitudes
    con Authorization ni copies comandos cURL que contengan tokens reales.
 
-`../config.js` define la URL pública de API, inicialmente habilitada solo en
-localhost:8000. En GitHub Pages queda vacía hasta configurar explícitamente HTTPS
-de Cloud Run. HTTP solo se permite a loopback desde el origen local. Jamás poner
-identificadores personales o credenciales en esa configuración.
+`../config.js` define la URL pública de API: `http://127.0.0.1:8080` desde
+`http://localhost:8000` y `https://jarvislifetracker-505633966366.northamerica-south1.run.app`
+desde `https://luigytc.github.io`. Los demás orígenes quedan sin backend configurado.
+HTTP solo se permite a loopback desde el origen local. Jamás poner identificadores
+personales o credenciales en esa configuración.
 
 ## Contrato y seguridad
 
@@ -125,7 +126,13 @@ RSA efímeras y tokens sintéticos en memoria y usan el verificador real de Goog
 con certificados públicos de prueba. Comprueban firma alterada, audiencia/emisor
 incorrectos y expiración. No usan tokens reales ni sustituyen el login manual.
 
-## Contenedor y Cloud Run posterior
+## Contenedor y Cloud Run
+
+El frontend apunta al servicio público
+`https://jarvislifetracker-505633966366.northamerica-south1.run.app`.
+Se verificaron salud (200), preflight desde GitHub Pages (204), rechazo sin
+identidad (401) y rechazo de un origen no permitido (403), con `no-store`.
+Esto no verifica la cuenta autorizada: el login real sigue siendo una prueba manual.
 
 Construcción local opcional, con Docker instalado:
 
@@ -138,7 +145,7 @@ y manifiestos. `.dockerignore` excluye por defecto todo: .env, herramientas, tes
 dependencias locales. En producción escucha `0.0.0.0:$PORT`; Cloud Run termina TLS.
 No poner valores privados en Dockerfile, argumentos de build o repositorio.
 
-Faltará elegir proyecto/región, registro de imagen, permisos de build/deploy,
+Para reproducir el despliegue en otro entorno, elegir proyecto/región, registro de imagen, permisos de build/deploy,
 configuración privada AUTHORIZED_GOOGLE_SUB (preferiblemente Secret Manager) y URL
 HTTPS pública. Configurar límites de instancias/solicitudes y observabilidad sin
 cabeceras Bearer/cuerpos. Se necesita salida HTTPS a las claves públicas de Google.

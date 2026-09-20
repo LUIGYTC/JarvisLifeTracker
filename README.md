@@ -14,7 +14,7 @@ Abre **http://localhost:8000/** y detén el servidor con Ctrl+C. Usa exactamente
 
 ## Probar Google Sign-In
 
-Primero sigue [backend/README.md](backend/README.md) para instalar la API, descubrir tu sub localmente y configurar `AUTHORIZED_GOOGLE_SUB`. `config.js` apunta a `http://127.0.0.1:8080` solo desde el origen local; GitHub Pages queda sin backend hasta configurar su URL HTTPS.
+Para desarrollo local, sigue [backend/README.md](backend/README.md) para instalar la API, descubrir tu sub y configurar `AUTHORIZED_GOOGLE_SUB`. `config.js` apunta a `http://127.0.0.1:8080` desde `http://localhost:8000` y a `https://jarvislifetracker-505633966366.northamerica-south1.run.app` desde `https://luigytc.github.io`. Los demás orígenes quedan sin backend configurado.
 
 1. Con conexión, espera el botón oficial «Continuar con Google» y púlsalo. Usa la cuenta que registraste como usuario de prueba en Google Auth Platform.
 2. Con backend funcionando y tu cuenta autorizada debe aparecer **«Identidad validada; usuario autorizado por el backend. Todavía no hay datos privados conectados.»** Solo se muestra ante el 200 esperado de `POST /auth/me`. No se muestra perfil/correo ni se decodifica el JWT. Un 401/403/503, error de red o respuesta inesperada no confirma autorización. Sin URL backend se indica que falta configurarlo.
@@ -71,7 +71,7 @@ Si ya abriste la versión antigua, la primera recarga puede mostrar su HTML alma
 - icons/icon-192.png e icons/icon-512.png: iconos PNG generados localmente, con monograma J sobre fondo oscuro; no requieren recursos externos.
 - scripts/serve.cjs: servidor local sin dependencias, requiere Node.js.
 
-La validación y autorización están implementadas en backend, pero requieren configurar el sub privado. No hay despliegue Cloud Run, Google Sheets ni datos financieros reales.
+La validación y autorización están implementadas en backend y requieren configurar el sub privado. El frontend está configurado para la API desplegada en Cloud Run; publicar juntos `config.js` y `sw.js` permite que GitHub Pages y las instalaciones PWA reciban la conexión. No hay Google Sheets ni datos financieros reales.
 
 ## Preparación de autenticación
 

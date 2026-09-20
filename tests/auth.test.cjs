@@ -6,13 +6,14 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../auth.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', fetchImpl } = {}) {
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
   const calls = { initialize: 0 };
   const forbidden = () => { throw new Error('Unexpected storage, logging, decoding or API access'); };
-  const window = { location: { origin: 'http://localhost:8000' }, JarvisConfig: { apiBaseUrl }, addEventListener: (type, listener) => { events[type] = listener; } };
+  const window = { location: { origin }, JarvisConfig: { apiBaseUrl }, addEventListener: (type, listener) => { events[type] = listener; } };
+  if (useConfig) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../config.js'), 'utf8'), { window });
   const navigator = { onLine: online };
   const id = {
     initialize(options) { calls.initialize++; calls.config = options; },
@@ -157,6 +158,45 @@ test('only a strict backend 200 authorizes; tokens use no-store bearer POST', as
   await h.calls.config.callback({ credential: 'synthetic-test-value' });
   assert.match(ui.status.textContent, /usuario autorizado por el backend/);
   assert.doesNotMatch(ui.status.textContent, /synthetic-test-value/);
+});
+
+test('configured frontend origins send identity to their intended backend', async () => {
+  for (const [origin, endpoint] of [
+    ['http://localhost:8000', 'http://127.0.0.1:8080/auth/me'],
+    ['https://luigytc.github.io', 'https://jarvislifetracker-505633966366.northamerica-south1.run.app/auth/me']
+  ]) {
+    let requests = 0;
+    const h = harness({ origin, useConfig: true, fetchImpl: async (url, options) => {
+      requests++;
+      assert.equal(url, endpoint);
+      assert.equal(options.method, 'POST');
+      assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
+      assert.equal(options.cache, 'no-store');
+      assert.equal(options.credentials, 'omit');
+      assert.equal(options.redirect, 'error');
+      return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+    } });
+    const ui = h.mount();
+    await settle();
+    h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    assert.equal(requests, 1);
+    assert.match(ui.status.textContent, /usuario autorizado por el backend/);
+  }
+});
+
+test('unsupported frontend origins never send identity to a backend', async () => {
+  for (const origin of ['http://127.0.0.1:8000', 'http://localhost:8001',
+    'http://luigytc.github.io', 'https://luigytc.github.io.example.test', 'null']) {
+    let requests = 0;
+    const h = harness({ origin, useConfig: true, fetchImpl: async () => { requests++; } });
+    const ui = h.mount();
+    await settle();
+    h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    assert.equal(requests, 0);
+    assert.match(ui.status.textContent, /falta configurar el backend/);
+  }
 });
 
 test('401, 403, 503, network errors and unexpected responses never authorize', async () => {
