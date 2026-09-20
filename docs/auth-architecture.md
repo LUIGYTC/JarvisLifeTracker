@@ -33,7 +33,11 @@ de Google, que no contienen datos privados del usuario.
 ## Frontend y PWA
 
 GIS se carga desde Google, con popup y callback JS, sin One Tap ni selección automática.
-La credencial vive en un cierre durante /auth/me y la comprobación posterior de Sheets; al terminar se descarta.
+La credencial vive en un cierre durante /auth/me y la comprobación posterior de Sheets.
+Temporalmente se retiene tras conectar Sheets para el botón de prueba de $0.01;
+se descarta al iniciar ese POST o invalidar la identidad. Sin herramienta disponible,
+se descarta al terminar la comprobación. El intento único se conserva en memoria
+durante toda la carga de página, incluso tras errores o nuevos logins.
 No se guarda en localStorage, sessionStorage, IndexedDB, cookies propias o archivos.
 No se imprime, decodifica ni exporta. Google gestiona sus propias cookies de sesión.
 

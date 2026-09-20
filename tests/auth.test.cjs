@@ -6,7 +6,148 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../auth.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl } = {}) {
+const controlledMovement = { fecha: '2026-09-20', hora: '12:00', tipo: 'Gasto', categoria: 'Prueba técnica',
+  monto: 0.01, descripcion: 'PRUEBA CONTROLADA JARVIS 20260920-01', metodo: 'Prueba',
+  origen: 'Verificación manual API', textoOriginal: 'Fila técnica explícita; no representa un gasto real' };
+
+async function loginForTest(h, ui) {
+  await settle();
+  h.calls.button.click_listener();
+  await h.calls.config.callback({ credential: 'synthetic-test-value' });
+}
+
+function temporaryHarness(options = {}) {
+  const writes = [];
+  const h = harness({ temporary: true, origin: 'https://luigytc.github.io', useConfig: true,
+    confirm: options.confirm || (() => true), fetchImpl: async (url, init) => {
+      if (url.endsWith('/auth/me')) return options.auth || { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (url.endsWith('/api/sheets/status')) return options.sheets || { status: 200, json: async () => ({ connected: true }) };
+      writes.push({ url, init });
+      return options.write ? options.write(url, init) : { status: 200, json: async () => ({ registered: true }) };
+    } });
+  return { ...h, writes };
+}
+
+test('temporary write requires authorization, Sheets connection and explicit confirmation', async () => {
+  for (const options of [{ auth: { status: 403 } }, { sheets: { status: 503 } },
+    { sheets: { status: 200, json: async () => ({ connected: false }) } }]) {
+    const h = temporaryHarness(options);
+    const ui = h.mount();
+    assert.equal(ui.testWrite.hidden, true);
+    await ui.testWrite.onclick();
+    await loginForTest(h, ui);
+    assert.equal(ui.testWrite.hidden, true);
+    await ui.testWrite.onclick();
+    assert.equal(h.writes.length, 0);
+  }
+  let accepted = false;
+  let confirmations = 0;
+  const h = temporaryHarness({ confirm: () => { confirmations++; return accepted; } });
+  const ui = h.mount();
+  await loginForTest(h, ui);
+  assert.equal(ui.testWrite.hidden, false);
+  await ui.testWrite.onclick();
+  assert.equal(h.writes.length, 0);
+  assert.equal(ui.testWrite.disabled, false);
+  accepted = true;
+  await ui.testWrite.onclick();
+  assert.equal(confirmations, 2);
+  assert.equal(h.writes.length, 1);
+  assert.equal(ui.testStatus.textContent, 'Prueba registrada. Revisa el Sheet.');
+  const { url, init } = h.writes[0];
+  assert.equal(url, 'https://jarvislifetracker-505633966366.northamerica-south1.run.app/api/movimientos');
+  assert.equal(init.method, 'POST');
+  assert.equal(init.headers.Authorization, 'Bearer synthetic-test-value');
+  assert.equal(init.headers['Content-Type'], 'application/json');
+  assert.equal(init.credentials, 'omit');
+  assert.equal(init.cache, 'no-store');
+  assert.equal(init.redirect, 'error');
+  assert.deepEqual(JSON.parse(init.body), controlledMovement);
+});
+
+test('temporary write latch prevents double click and survives new login and remount', async () => {
+  let finish;
+  const h = temporaryHarness({ write: () => new Promise(resolve => { finish = resolve; }) });
+  let ui = h.mount();
+  await loginForTest(h, ui);
+  const pending = ui.testWrite.onclick();
+  assert.equal(ui.testWrite.disabled, true);
+  await ui.testWrite.onclick();
+  assert.equal(h.writes.length, 1);
+  finish({ status: 200, json: async () => ({ registered: true }) });
+  await pending;
+  await ui.testWrite.onclick();
+  ui.clear.onclick();
+  await loginForTest(h, ui);
+  assert.equal(ui.testWrite.hidden, true);
+  ui.dispose();
+  ui = h.mount();
+  await loginForTest(h, ui);
+  await ui.testWrite.onclick();
+  assert.equal(h.writes.length, 1);
+});
+
+test('temporary write network errors, timeouts and ambiguous replies never retry', async () => {
+  for (const kind of ['network', 'timeout', 'malformed', 'extra', 'false', '503']) {
+    const h = temporaryHarness({ write: async () => {
+      if (kind === 'network') throw new Error('private details');
+      if (kind === 'timeout') return new Promise(() => {});
+      if (kind === 'malformed') return { status: 200, json: async () => { throw new Error('private'); } };
+      if (kind === '503') return { status: 503, json: async () => ({ error: 'movement_unavailable' }) };
+      return { status: 200, json: async () => kind === 'extra' ? { registered: true, extra: 'private' } : { registered: false } };
+    } });
+    const ui = h.mount();
+    await loginForTest(h, ui);
+    const pending = ui.testWrite.onclick();
+    if (kind === 'timeout') [...h.timers.values()][0]();
+    await pending;
+    assert.equal(ui.testStatus.textContent, 'Resultado incierto. Revisa el Sheet antes de volver a intentar.');
+    assert.equal(ui.testWrite.disabled, true);
+    await ui.testWrite.onclick();
+    assert.equal(h.writes.length, 1);
+    assert.equal(h.timers.size, 0);
+  }
+});
+
+test('temporary write reports only known pre-write rejection as generic failure', async () => {
+  for (const [status, error] of [[401, 'invalid_identity'], [403, 'not_authorized'], [400, 'invalid_movement'],
+    [413, 'invalid_movement'], [415, 'unsupported_media_type'], [503, 'authorization_unavailable']]) {
+    const h = temporaryHarness({ write: async () => ({ status, json: async () => ({ error }) }) });
+    const ui = h.mount();
+    await loginForTest(h, ui);
+    await ui.testWrite.onclick();
+    assert.equal(ui.testStatus.textContent, 'No se pudo registrar la prueba.');
+    await ui.testWrite.onclick();
+    assert.equal(h.writes.length, 1);
+  }
+});
+
+test('discard, exit, offline and demo invalidate temporary write readiness and late results', async () => {
+  for (const action of ['discard', 'pagehide', 'offline', 'demo']) {
+    for (const inFlight of [false, true]) {
+      let finish;
+      const h = temporaryHarness({ write: () => new Promise(resolve => { finish = resolve; }) });
+      const ui = h.mount();
+      await loginForTest(h, ui);
+      const pending = inFlight ? ui.testWrite.onclick() : null;
+      if (action === 'discard') ui.clear.onclick();
+      if (action === 'pagehide') h.events.pagehide();
+      if (action === 'offline') { h.navigator.onLine = false; h.events.offline(); }
+      if (action === 'demo') ui.dispose();
+      assert.equal(ui.testWrite.hidden, true);
+      await ui.testWrite.onclick();
+      assert.equal(h.writes.length, inFlight ? 1 : 0);
+      if (inFlight) {
+        assert.equal(h.writes[0].init.signal.aborted, true);
+        finish({ status: 200, json: async () => ({ registered: true }) });
+        await pending;
+        assert.equal(ui.testStatus.textContent, 'Resultado incierto. Revisa el Sheet antes de volver a intentar.');
+      }
+    }
+  }
+});
+
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, temporary = false, confirm = () => false } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
@@ -14,6 +155,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   const forbidden = () => { throw new Error('Unexpected storage, logging, decoding or API access'); };
   const window = { location: origin === 'null' ? new URL('file:///index.html') : new URL(origin), JarvisConfig: { apiBaseUrl }, addEventListener: (type, listener) => { events[type] = listener; } };
   if (useConfig) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../config.js'), 'utf8'), { window });
+  window.confirm = confirm;
   const navigator = { onLine: online };
   const id = {
     initialize(options) { calls.initialize++; calls.config = options; },
@@ -37,7 +179,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
     console: new Proxy({}, { get: forbidden })
   });
   function mount() {
-    const elements = Object.fromEntries(['button', 'status', 'retry', 'clear'].map(key =>
+    const elements = Object.fromEntries(['button', 'status', 'retry', 'clear', ...(temporary ? ['testWrite', 'testStatus'] : [])].map(key =>
       [key, { hidden: false, textContent: '', clientWidth: 260, replaceChildren() {} }]));
     const dispose = window.JarvisAuth.mount(elements);
     return { ...elements, dispose };

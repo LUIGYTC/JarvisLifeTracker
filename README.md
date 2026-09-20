@@ -77,6 +77,28 @@ La validación y autorización están implementadas en backend y requieren confi
 
 ## Preparación de autenticación
 
+### Herramienta temporal de escritura (PWA 2.3.4)
+
+Después de autorizar y confirmar «Google Sheets conectado.» aparece
+«Registrar prueba $0.01». Al pulsarlo se pide confirmación explícita para insertar
+la fila fija `PRUEBA CONTROLADA JARVIS 20260920-01`. Cancelar no envía nada.
+Confirmar consume el único intento de esta carga de página, incluso ante error.
+Éxito: «Prueba registrada. Revisa el Sheet.». Un rechazo conocido antes de escribir
+muestra «No se pudo registrar la prueba.». Timeout, red o respuesta ambigua:
+«Resultado incierto. Revisa el Sheet antes de volver a intentar.».
+
+Excepción temporal al descarte inmediato del token: tras conectar Sheets, se
+retiene únicamente en el cierre de auth.js para este botón. Se descarta al iniciar
+el POST, descartar identidad, salir, perder conexión o abrir la demo. No hay
+persistencia ni consultas automáticas para buscar la fila. Una recarga completa
+o una pestaña nueva tiene otro límite de intento; no es idempotencia global.
+Revisar el Sheet antes de repetir en otra carga de página.
+
+Para retirar la herramienta, elimina el botón/párrafo y sus dos propiedades de
+mount en app.js, y los bloques TEMPORARY y hooks asociados en auth.js; restaura
+el descarte incondicional de credential en el finally de receiveIdentity. Actualiza
+la versión del service worker al publicar esa retirada.
+
 El backend también ofrece `POST /api/movimientos` para añadir una fila estructurada
 en la hoja fija Movimientos, con autorización, validación estricta y texto literal
 RAW. No hay formulario ni conexión de la demo a datos reales. El contrato y la

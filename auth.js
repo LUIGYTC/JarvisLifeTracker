@@ -8,6 +8,9 @@
   let accepting = false;
   let request = null;
   let generation = 0;
+  // TEMPORARY controlled-write tool. This latch lasts for the entire page lifetime.
+  let testAttempted = false;
+  let testEndpoint = null;
 
   function clearCredential() {
     credential = null;
@@ -15,6 +18,67 @@
     generation++;
     request?.abort();
     request = null;
+    testEndpoint = null;
+    if (view?.testWrite) {
+      view.testWrite.hidden = true;
+      view.testWrite.disabled = true;
+      if (view.testStatus.textContent === 'Registrando prueba…') {
+        view.testStatus.textContent = 'Resultado incierto. Revisa el Sheet antes de volver a intentar.';
+      }
+    }
+  }
+
+  // TEMPORARY: remove this handler, its mount hook and the readiness hook below
+  // after verifying the controlled row. Never export the credential.
+  async function registerTest(current) {
+    const eligible = () => view === current && navigator.onLine && credential && testEndpoint && !testAttempted;
+    if (!eligible()) return;
+    if (!window.confirm('¿Registrar UNA fila real de prueba por $0.01? Si el resultado es incierto, revisa el Sheet antes de intentar de nuevo.')) return;
+    if (!eligible()) return;
+    testAttempted = true; // Synchronous latch BEFORE fetch or any await.
+    current.testWrite.disabled = true;
+    const endpoint = testEndpoint;
+    testEndpoint = null;
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` };
+    credential = null;
+    const attempt = generation;
+    const controller = new AbortController();
+    request = controller;
+    const uncertain = 'Resultado incierto. Revisa el Sheet antes de volver a intentar.';
+    current.testStatus.textContent = 'Registrando prueba…';
+    let timer;
+    try {
+      const result = await Promise.race([
+        (async () => {
+          const response = await fetch(endpoint, {
+            method: 'POST', headers, credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal,
+            body: JSON.stringify({ fecha: '2026-09-20', hora: '12:00', tipo: 'Gasto', categoria: 'Prueba técnica',
+              monto: 0.01, descripcion: 'PRUEBA CONTROLADA JARVIS 20260920-01', metodo: 'Prueba',
+              origen: 'Verificación manual API', textoOriginal: 'Fila técnica explícita; no representa un gasto real' })
+          });
+          return { code: response.status, data: await response.json() };
+        })(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 20000);
+        })
+      ]);
+      if (attempt !== generation || view !== current || controller.signal.aborted) return;
+      const { code, data } = result;
+      if (code === 200 && data?.registered === true && Object.keys(data).length === 1) {
+        current.testStatus.textContent = 'Prueba registrada. Revisa el Sheet.';
+      } else {
+        const rejected = { 400: ['invalid_movement'], 401: ['invalid_identity'],
+          403: ['not_authorized', 'origin_not_allowed'], 408: ['invalid_movement'],
+          413: ['invalid_movement'], 415: ['unsupported_media_type'], 503: ['authorization_unavailable'] };
+        current.testStatus.textContent = data && Object.keys(data).length === 1 && rejected[code]?.includes(data.error)
+          ? 'No se pudo registrar la prueba.' : uncertain;
+      }
+    } catch {
+      if (attempt === generation && view === current) current.testStatus.textContent = uncertain;
+    } finally {
+      clearTimeout(timer);
+      if (request === controller) request = null;
+    }
   }
 
   function authEndpoint() {
@@ -95,6 +159,12 @@
             throw new Error('Unexpected Sheets response');
           }
           current.status.textContent = `${authorizedMessage} Google Sheets conectado.`;
+          // TEMPORARY: retain the existing in-memory token only for this one-shot tool.
+          if (current.testWrite && !testAttempted) {
+            testEndpoint = new URL('/api/movimientos', endpoint).href;
+            current.testWrite.hidden = false;
+            current.testWrite.disabled = false;
+          }
         } catch {
           if (attempt === generation && view === current) {
             current.status.textContent = `${authorizedMessage} No se pudo comprobar la conexión con Google Sheets.`;
@@ -110,7 +180,7 @@
     } finally {
       clearTimeout(timer);
       if (attempt === generation) {
-        credential = null;
+        if (!testEndpoint) credential = null;
         request = null;
         current.button.hidden = !navigator.onLine;
       }
@@ -190,10 +260,15 @@
     }
   }
 
-  function mount({ button, status, retry, clear }) {
+  function mount({ button, status, retry, clear, testWrite, testStatus }) {
     clearCredential();
-    const current = { button, status, retry, clear };
+    const current = { button, status, retry, clear, testWrite, testStatus };
     view = current;
+    if (testWrite) {
+      testWrite.hidden = true;
+      testWrite.disabled = true;
+      testWrite.onclick = () => registerTest(current);
+    }
     clear.hidden = true;
     retry.onclick = () => prepare(current);
     clear.onclick = () => {
