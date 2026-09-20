@@ -77,6 +77,11 @@ La validación y autorización están implementadas en backend y requieren confi
 
 ## Preparación de autenticación
 
+El backend también ofrece `POST /api/movimientos` para añadir una fila estructurada
+en la hoja fija Movimientos, con autorización, validación estricta y texto literal
+RAW. No hay formulario ni conexión de la demo a datos reales. El contrato y la
+prueba de una fila controlada están en [backend/README.md](backend/README.md).
+
 La arquitectura está en [docs/auth-architecture.md](docs/auth-architecture.md). GIS usa el cliente web público autorizado para `http://localhost:8000` y `https://luigytc.github.io`. No se usa Client Secret. El token se envía exclusivamente desde memoria a `/auth/me` del backend configurado con `no-store`, sin cookies ni redirects; nunca se imprime, decodifica ni persiste. La demo pública no es una barrera de seguridad.
 
 Tras instalar dependencias backend, ejecuta todas las pruebas con `node --test backend/test/*.test.js tests/*.test.cjs`. Comprueba sintaxis con `node --check` sobre los archivos JavaScript de frontend/backend. Las pruebas no usan credenciales reales.

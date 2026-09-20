@@ -2,6 +2,8 @@ import http from 'node:http';
 import { ALLOWED_ORIGINS } from './config.js';
 import { createVerifier } from './verify.js';
 import { createSheetsCheck } from './sheets.js';
+import { createMovementWriter } from './sheets-write.js';
+import { movimientoRow, readMovementBody } from './movimientos.js';
 
 export function reply(res, status, body) {
   res.writeHead(status, {
@@ -20,7 +22,7 @@ export function bearerToken(req) {
 }
 
 export function createApp({ authorizedSub = '', verify = createVerifier(), verificationTimeoutMs = 10000,
-  checkSheets = createSheetsCheck() } = {}) {
+  checkSheets = createSheetsCheck(), writeMovement = createMovementWriter() } = {}) {
   const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000 }, async (req, res) => {
     try {
       res.setHeader('Vary', 'Origin');
@@ -29,7 +31,7 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
         return reply(res, 403, { error: 'origin_not_allowed' });
       }
       if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
-      const method = req.url === '/auth/me' ? 'POST'
+      const method = ['/auth/me', '/api/movimientos'].includes(req.url) ? 'POST'
         : ['/health', '/api/sheets/status'].includes(req.url) ? 'GET' : null;
       if (!method) return reply(res, 404, { error: 'not_found' });
       if (req.method === 'OPTIONS') {
@@ -52,7 +54,7 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
       const token = bearerToken(req);
       if (!token) return reply(res, 401, { error: 'invalid_identity' });
       // Authorization header only: no tokens accepted from request bodies or URLs.
-      if (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) > 0) {
+      if (req.url !== '/api/movimientos' && (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) > 0)) {
         return reply(res, 400, { error: 'body_not_allowed' });
       }
       let sub;
@@ -70,6 +72,22 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
       }
       if (!authorizedSub) return reply(res, 503, { error: 'authorization_unavailable' });
       if (sub !== authorizedSub) return reply(res, 403, { error: 'not_authorized' });
+      if (req.url === '/api/movimientos') {
+        if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(req.headers['content-type'] || '') ||
+            req.headers['content-encoding']) return reply(res, 415, { error: 'unsupported_media_type' });
+        let movement;
+        try {
+          movement = await readMovementBody(req);
+          movimientoRow(movement);
+        } catch (error) {
+          res.setHeader('Connection', 'close');
+          return reply(res, error.status || 400, { error: 'invalid_movement' });
+        }
+        try {
+          if (await writeMovement(movement) !== true) throw new Error('Write failed');
+          return reply(res, 200, { registered: true });
+        } catch { return reply(res, 503, { error: 'movement_unavailable' }); }
+      }
       if (req.url === '/api/sheets/status') {
         try {
           if (await checkSheets() !== true) throw new Error('Sheets unavailable');

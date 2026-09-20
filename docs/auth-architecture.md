@@ -16,7 +16,7 @@ GitHub Pages PWA /JarvisLifeTracker/ (pública)
 ```
 
 Se cambia el contrato anterior GET /auth/me a **POST**, conforme al requisito actual.
-La librería oficial se instala solo en backend. Node HTTP nativo sirve tres rutas;
+La librería oficial se instala solo en backend. Node HTTP nativo sirve cuatro rutas;
 no hace falta framework, Client Secret ni credenciales Cloud para verificar ID tokens.
 
 ## Frontera de seguridad
@@ -99,5 +99,18 @@ no solicita celdas ni títulos. La respuesta de la API propia es solo
 `{"connected":true}` o un error genérico sin datos del proveedor. El plazo de la
 comprobación es de 8 segundos. No se envía el ID token del usuario a Sheets.
 La biblioteca administra el access token de servicio en memoria en el backend.
-No hay escrituras, proxy de hojas arbitrarias ni credenciales de servicio en el
-frontend. `/health` y `/auth/me` no dependen de la disponibilidad de Sheets.
+No hay proxy de hojas arbitrarias ni credenciales de servicio en el frontend.
+`/health` y `/auth/me` no dependen de la disponibilidad de Sheets.
+
+## Escritura estructurada de movimientos
+
+POST /api/movimientos atraviesa la misma autorización y valida un JSON cerrado de
+nueve campos antes de llamar a Sheets. El spreadsheet y Movimientos A:I están
+fijados en backend. Un cliente ADC separado solicita scope spreadsheets y añade
+una sola fila mediante append, INSERT_ROWS y RAW. Los strings se almacenan
+literalmente sin interpretar fórmulas; el monto sigue siendo un número.
+No hay interpretación de lenguaje natural ni interfaz de escritura. No se registra
+el payload ni errores internos. La respuesta solo confirma registered:true o un
+error genérico. No se reintenta automáticamente una escritura: un timeout puede
+dejar un resultado incierto que requiere revisar la hoja antes de repetir.
+Contrato, límites y prueba controlada: [backend/README.md](../backend/README.md).
