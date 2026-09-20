@@ -78,7 +78,28 @@
         if (!data || data.authenticated !== true || data.authorized !== true || Object.keys(data).length !== 2) {
           throw new Error('Unexpected response');
         }
-        current.status.textContent = 'Identidad validada; usuario autorizado por el backend. Todavía no hay datos privados conectados.';
+        const authorizedMessage = 'Identidad validada; usuario autorizado por el backend.';
+        current.status.textContent = `${authorizedMessage} Comprobando conexión con Google Sheets…`;
+        clearTimeout(timer);
+        timer = setTimeout(() => controller.abort(), 12000);
+        try {
+          const sheets = await fetch(new URL('/api/sheets/status', endpoint).href, {
+            method: 'GET', headers: { Authorization: `Bearer ${credential}` },
+            credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal
+          });
+          if (attempt !== generation || view !== current) return;
+          if (sheets.status !== 200) throw new Error('Sheets unavailable');
+          const status = await sheets.json();
+          if (attempt !== generation || view !== current) return;
+          if (controller.signal.aborted || !status || status.connected !== true || Object.keys(status).length !== 1) {
+            throw new Error('Unexpected Sheets response');
+          }
+          current.status.textContent = `${authorizedMessage} Google Sheets conectado.`;
+        } catch {
+          if (attempt === generation && view === current) {
+            current.status.textContent = `${authorizedMessage} No se pudo comprobar la conexión con Google Sheets.`;
+          }
+        }
       } else {
         throw new Error('Unexpected response');
       }

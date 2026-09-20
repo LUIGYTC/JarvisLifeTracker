@@ -142,15 +142,18 @@ test('a late SDK load cannot alter the public demo after unmount', async () => {
 });
 
 test('only a strict backend 200 authorizes; tokens use no-store bearer POST', async () => {
+  const requests = [];
   const h = harness({ apiBaseUrl: 'http://127.0.0.1:8080', fetchImpl: async (url, options) => {
-    assert.equal(url, 'http://127.0.0.1:8080/auth/me');
-    assert.equal(options.method, 'POST');
+    requests.push(url);
+    assert.equal(url, `http://127.0.0.1:8080${requests.length === 1 ? '/auth/me' : '/api/sheets/status'}`);
+    assert.equal(options.method, requests.length === 1 ? 'POST' : 'GET');
     assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
     assert.equal(options.cache, 'no-store');
     assert.equal(options.credentials, 'omit');
     assert.equal(options.redirect, 'error');
     assert.equal(options.body, undefined);
-    return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+    return { status: 200, json: async () => requests.length === 1
+      ? { authenticated: true, authorized: true } : { connected: true } };
   } });
   const ui = h.mount();
   await settle();
@@ -158,6 +161,9 @@ test('only a strict backend 200 authorizes; tokens use no-store bearer POST', as
   await h.calls.config.callback({ credential: 'synthetic-test-value' });
   assert.match(ui.status.textContent, /usuario autorizado por el backend/);
   assert.doesNotMatch(ui.status.textContent, /synthetic-test-value/);
+  assert.match(ui.status.textContent, /Google Sheets conectado\./);
+  assert.equal(requests.length, 2);
+  assert.equal(h.timers.size, 0);
 });
 
 test('configured frontend origins send identity to their intended backend', async () => {
@@ -172,19 +178,21 @@ test('configured frontend origins send identity to their intended backend', asyn
     let requests = 0;
     const h = harness({ origin, useConfig: true, fetchImpl: async (url, options) => {
       requests++;
-      assert.equal(url, endpoint);
-      assert.equal(options.method, 'POST');
+      assert.equal(url, requests === 1 ? endpoint : new URL('/api/sheets/status', endpoint).href);
+      assert.equal(options.method, requests === 1 ? 'POST' : 'GET');
       assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
       assert.equal(options.cache, 'no-store');
       assert.equal(options.credentials, 'omit');
       assert.equal(options.redirect, 'error');
-      return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      return { status: 200, json: async () => requests === 1
+        ? { authenticated: true, authorized: true } : { connected: true } };
     } });
     const ui = h.mount();
     await settle();
     h.calls.button.click_listener();
     await h.calls.config.callback({ credential: 'synthetic-test-value' });
-    assert.equal(requests, 1);
+    assert.equal(requests, 2);
+    assert.match(ui.status.textContent, /Google Sheets conectado\./);
     assert.match(ui.status.textContent, /usuario autorizado por el backend/);
   }
 });
@@ -225,7 +233,9 @@ test('401, 403, 503, network errors and unexpected responses never authorize', a
     { status: 200, json: async () => ({ authenticated: true, authorized: true, extra: 'unexpected' }) },
     { status: 200, json: async () => { throw new Error('invalid JSON'); } }, null
   ]) {
+    let requests = 0;
     const h = harness({ apiBaseUrl: 'http://127.0.0.1:8080', fetchImpl: async () => {
+      requests++;
       if (!response) throw new Error('network');
       return response;
     } });
@@ -235,6 +245,7 @@ test('401, 403, 503, network errors and unexpected responses never authorize', a
     await h.calls.config.callback({ credential: 'synthetic-test-value' });
     assert.doesNotMatch(ui.status.textContent, /Identidad validada; usuario autorizado/);
     assert.equal(ui.button.hidden, false);
+    assert.equal(requests, 1);
   }
 });
 
@@ -270,4 +281,95 @@ test('insecure remote API or URL with credentials cannot receive identity', asyn
     await h.calls.config.callback({ credential: 'synthetic-test-value' });
     assert.match(ui.status.textContent, /No se pudo confirmar/);
   }
+});
+
+test('Sheets failures keep authorization and show only a generic message', async () => {
+  for (const result of [null, { status: 401 }, { status: 403 }, { status: 503 },
+    { status: 200, json: async () => ({ connected: false }) },
+    { status: 200, json: async () => ({ connected: true, private: 'private-detail' }) },
+    { status: 200, json: async () => { throw new Error('private-detail'); } }]) {
+    const h = harness({ apiBaseUrl: 'https://api.example.test', fetchImpl: async url => {
+      if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (!result) throw new Error('private-detail');
+      return result;
+    } });
+    const ui = h.mount();
+    await settle();
+    h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    assert.equal(ui.status.textContent, 'Identidad validada; usuario autorizado por el backend. No se pudo comprobar la conexión con Google Sheets.');
+    assert.equal(ui.button.hidden, false);
+    assert.equal(h.timers.size, 0);
+  }
+});
+
+test('Sheets is not requested until the authorization body is validated', async () => {
+  let finish;
+  let requests = 0;
+  const h = harness({ apiBaseUrl: 'https://api.example.test', fetchImpl: async () => {
+    requests++;
+    return { status: 200, json: () => new Promise(resolve => { finish = resolve; }) };
+  } });
+  const ui = h.mount();
+  await settle();
+  h.calls.button.click_listener();
+  const pending = h.calls.config.callback({ credential: 'synthetic-test-value' });
+  await settle();
+  assert.equal(requests, 1);
+  ui.dispose();
+  finish({ authenticated: true, authorized: true });
+  await pending;
+  assert.equal(requests, 1);
+});
+
+test('late Sheets responses and JSON cannot update discarded, offline, exited or demo views', async () => {
+  for (const phase of ['fetch', 'json']) {
+    for (const action of ['discard', 'offline', 'pagehide', 'demo', 'new-attempt']) {
+      let finish;
+      let signal;
+      const h = harness({ apiBaseUrl: 'https://api.example.test', fetchImpl: async (url, options) => {
+        if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+        signal = options.signal;
+        const delayed = () => new Promise(resolve => { finish = resolve; });
+        return phase === 'fetch' ? delayed() : { status: 200, json: delayed };
+      } });
+      const ui = h.mount();
+      await settle();
+      h.calls.button.click_listener();
+      const pending = h.calls.config.callback({ credential: 'synthetic-test-value' });
+      await settle();
+      if (action === 'discard') ui.clear.onclick();
+      if (action === 'offline') { h.navigator.onLine = false; h.events.offline(); }
+      if (action === 'pagehide') h.events.pagehide();
+      if (action === 'demo') ui.dispose();
+      if (action === 'new-attempt') h.calls.button.click_listener();
+      const previous = ui.status.textContent;
+      assert.equal(signal.aborted, true);
+      finish(phase === 'fetch' ? { status: 200, json: async () => ({ connected: true }) } : { connected: true });
+      await pending;
+      assert.equal(ui.status.textContent, previous);
+      assert.equal(h.timers.size, 0);
+    }
+  }
+});
+
+test('Sheets timeout aborts the request and permits a fresh login', async () => {
+  let signal;
+  const h = harness({ apiBaseUrl: 'https://api.example.test', fetchImpl: async (url, options) => {
+    if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+    signal = options.signal;
+    return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('timeout'))));
+  } });
+  const ui = h.mount();
+  await settle();
+  h.calls.button.click_listener();
+  const pending = h.calls.config.callback({ credential: 'synthetic-test-value' });
+  await settle();
+  assert.equal(h.timers.size, 1);
+  [...h.timers.values()][0]();
+  await pending;
+  assert.equal(signal.aborted, true);
+  assert.match(ui.status.textContent, /No se pudo comprobar la conexión con Google Sheets\./);
+  assert.equal(ui.button.hidden, false);
+  assert.equal(h.timers.size, 0);
 });

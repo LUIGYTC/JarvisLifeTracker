@@ -81,10 +81,10 @@ El servidor estático normal solo sirve recursos públicos permitidos, nunca bac
    ```
 
 4. Abre exactamente `http://localhost:8000/`. Si hay una PWA anterior, pulsa
-   «Actualizar» o cierra sus pestañas y vuelve a abrirla para activar versión 2.3.2.
+   «Actualizar» o cierra sus pestañas y vuelve a abrirla para activar versión 2.3.3.
 5. Google Sign-In envía `POST http://127.0.0.1:8080/auth/me` con Bearer desde memoria,
    sin cookies, cuerpo ni redirects. La cuenta permitida obtiene **«Identidad validada;
-   usuario autorizado por el backend. Todavía no hay datos privados conectados.»**
+   usuario autorizado por el backend.»**
 6. Prueba otra cuenta válida: 403. Token inválido/expirado: 401; sin cuenta configurada:
    503. Red caída o respuesta inesperada: nunca se confirma autorización.
 7. Descartar o entrar a demo invalida respuestas en vuelo. No exportes solicitudes
@@ -198,28 +198,16 @@ Los tests inyectan dobles de ADC/Sheets y nunca necesitan credenciales reales.
    credenciales; ADC usa automáticamente la identidad adjunta.
 2. Comprueba `/health`: 200 `{"ok":true}`. Abre `/api/sheets/status` sin token:
    debe devolver 401, no datos. Abrir la URL directamente no prueba autorización.
-3. Para la comprobación autenticada sin cambiar GIS ni persistir tokens, abre la
-   PWA en GitHub Pages y DevTools → Sources → `auth.js`. Pon un breakpoint en la
-   primera línea de `receiveIdentity(response)` e inicia sesión normalmente con
-   la cuenta autorizada. Cuando se pause en ese callback, ejecuta en la consola
-   este código, que referencia el token en memoria sin copiarlo ni imprimirlo:
-
-   ```js
-   void fetch('https://jarvislifetracker-505633966366.northamerica-south1.run.app/api/sheets/status', {
-     method: 'GET',
-     headers: { Authorization: `Bearer ${response.credential}` },
-     credentials: 'omit', cache: 'no-store', redirect: 'error',
-     signal: AbortSignal.timeout(15000)
-   }).then(async result => {
-     console.log(result.status, await result.json());
-   }).catch(() => console.log('No se pudo comprobar la conexión'));
-   ```
-
-4. Reanuda la ejecución para que se complete el flujo y se descarte la credencial.
-   Resultado esperado: 200 y únicamente `{"connected":true}`. `/auth/me` debe
-   seguir funcionando. Retira el breakpoint; no exportes HAR ni copies headers
-   Authorization. El historial del fragmento contiene código, no el token.
-5. Otra cuenta válida debe recibir 403. Si el usuario autorizado recibe 503
+3. Publica el frontend y activa la actualización PWA 2.3.3. Inicia sesión desde
+   GitHub Pages. Tras autorizar mediante /auth/me, se consulta automáticamente
+   /api/sheets/status reutilizando el token en memoria. No hacen falta breakpoints
+   ni copiar tokens. Éxito: «Google Sheets conectado.».
+4. Ante fallo aparece «No se pudo comprobar la conexión con Google Sheets.» sin
+   detalles internos. Al terminar se descarta la credencial. Descartar el intento,
+   salir, perder conexión o entrar a demo aborta la consulta e invalida respuestas
+   tardías. No exportes HAR ni copies headers Authorization.
+5. Otra cuenta válida debe recibir 403 en /auth/me y no provocar consultas a Sheets.
+   Si el usuario autorizado recibe 503
    `sheets_unavailable`, revisa la identidad de ejecución, la compartición del
    archivo, API habilitada y conectividad/cuota; el endpoint no expone detalles
    internos. Los errores y el timeout ya están cubiertos con dobles en tests.

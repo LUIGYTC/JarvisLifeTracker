@@ -33,7 +33,7 @@ de Google, que no contienen datos privados del usuario.
 ## Frontend y PWA
 
 GIS se carga desde Google, con popup y callback JS, sin One Tap ni selección automática.
-La credencial vive en un cierre hasta terminar la petición y entonces se descarta.
+La credencial vive en un cierre durante /auth/me y la comprobación posterior de Sheets; al terminar se descarta.
 No se guarda en localStorage, sessionStorage, IndexedDB, cookies propias o archivos.
 No se imprime, decodifica ni exporta. Google gestiona sus propias cookies de sesión.
 
@@ -43,7 +43,8 @@ el host `luigytc.github.io`; queda vacía en otros hosts. Esta selección no amp
 Antes de enviar identidad desde GitHub Pages, auth.js exige el origen exacto de Cloud Run.
 No se toma de parámetros de página ni respuestas.
 Fuera de loopback se exige HTTPS. Peticiones con credentials: omit, cache: no-store,
-redirect: error y timeout; token solo al /auth/me del origen configurado. Solo un
+redirect: error y timeout de 12 segundos por petición; token solo a /auth/me y,
+tras autorizar, a /api/sheets/status del mismo origen configurado. Solo un
 200 con ambos booleanos verdaderos y sin campos adicionales confirma autorización.
 401/403/503, red caída o respuesta inesperada nunca habilitan acceso privado.
 
