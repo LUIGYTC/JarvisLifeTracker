@@ -11,9 +11,6 @@ function login() {
     <p id="auth-status" class="notice" role="status" aria-live="polite" aria-atomic="true">Cargando el inicio de sesión de Google…</p>
     <button class="google demo-button" id="retry-google" type="button" hidden>Reintentar cargar Google</button>
     <button class="google demo-button" id="clear-identity" type="button" hidden>Descartar identidad o intento</button>
-    <!-- TEMPORARY controlled-write verification; remove after checking the test row. -->
-    <button class="google demo-button" id="register-test" type="button" hidden disabled>Registrar prueba $0.01</button>
-    <p id="test-write-status" class="notice" role="status" aria-live="polite"></p>
     <button class="google demo-button" id="open-demo" type="button">Explorar demo sin iniciar sesión</button>
     <div class="notice">Demo pública con datos ficticios. No solicita ni almacena información financiera.</div>
   </section></main>`;
@@ -21,9 +18,7 @@ function login() {
     button: document.querySelector('#google-signin'),
     status: document.querySelector('#auth-status'),
     retry: document.querySelector('#retry-google'),
-    clear: document.querySelector('#clear-identity'),
-    testWrite: document.querySelector('#register-test'),
-    testStatus: document.querySelector('#test-write-status')
+    clear: document.querySelector('#clear-identity')
   });
   document.querySelector('#open-demo').onclick = () => { disposeAuth(); dashboard(); };
 }

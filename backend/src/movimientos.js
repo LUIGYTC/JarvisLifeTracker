@@ -4,7 +4,8 @@ const fields = ['fecha', 'hora', 'tipo', 'categoria', 'monto', 'descripcion', 'm
 export function movimientoRow(value) {
   const invalid = () => { throw new Error('Invalid movement'); };
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
-      Object.keys(value).length !== fields.length || fields.some(key => !Object.hasOwn(value, key))) invalid();
+      Object.keys(value).length !== fields.length + 1 || fields.some(key => !Object.hasOwn(value, key))) invalid();
+  if (typeof value.operationId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.operationId)) invalid();
   if (typeof value.fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.fecha) || value.fecha.startsWith('0000')) invalid();
   const date = new Date(`${value.fecha}T00:00:00.000Z`);
   if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value.fecha) invalid();

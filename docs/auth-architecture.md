@@ -34,10 +34,8 @@ de Google, que no contienen datos privados del usuario.
 
 GIS se carga desde Google, con popup y callback JS, sin One Tap ni selección automática.
 La credencial vive en un cierre durante /auth/me y la comprobación posterior de Sheets.
-Temporalmente se retiene tras conectar Sheets para el botón de prueba de $0.01;
-se descarta al iniciar ese POST o invalidar la identidad. Sin herramienta disponible,
-se descarta al terminar la comprobación. El intento único se conserva en memoria
-durante toda la carga de página, incluso tras errores o nuevos logins.
+Se descarta al terminar la comprobación o invalidar la identidad. La herramienta
+temporal de escritura ha sido retirada.
 No se guarda en localStorage, sessionStorage, IndexedDB, cookies propias o archivos.
 No se imprime, decodifica ni exporta. Google gestiona sus propias cookies de sesión.
 
@@ -109,12 +107,14 @@ No hay proxy de hojas arbitrarias ni credenciales de servicio en el frontend.
 ## Escritura estructurada de movimientos
 
 POST /api/movimientos atraviesa la misma autorización y valida un JSON cerrado de
-nueve campos antes de llamar a Sheets. El spreadsheet y Movimientos A:I están
+diez campos (incluido operationId UUID v4) antes de llamar a Sheets. El spreadsheet y Movimientos A:I están
 fijados en backend. Un cliente ADC separado solicita scope spreadsheets y añade
 una sola fila mediante append, INSERT_ROWS y RAW. Los strings se almacenan
 literalmente sin interpretar fórmulas; el monto sigue siendo un número.
 No hay interpretación de lenguaje natural ni interfaz de escritura. No se registra
 el payload ni errores internos. La respuesta solo confirma registered:true o un
-error genérico. No se reintenta automáticamente una escritura: un timeout puede
-dejar un resultado incierto que requiere revisar la hoja antes de repetir.
-Contrato, límites y prueba controlada: [backend/README.md](../backend/README.md).
+error genérico. Operaciones A:C persiste UUID, timestamp y estado antes de escribir.
+Un UUID confirmado devuelve duplicate:true; pending bloquea nuevos appends con 409.
+No se reintenta automáticamente una escritura. Las reservas inciertas requieren
+reconciliación manual. Contrato, algoritmo y límites de atomicidad:
+[movimientos-idempotency.md](movimientos-idempotency.md).

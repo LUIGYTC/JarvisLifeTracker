@@ -1,5 +1,5 @@
 ﻿// Increment VERSION whenever a precached file changes; deploy all files together.
-const VERSION = '2.3.4';
+const VERSION = '2.3.5';
 const BASE = new URL('./', self.location.href);
 const PREFIX = `jarvislifetracker:${BASE.pathname}:`;
 const CACHE = `${PREFIX}${VERSION}`;

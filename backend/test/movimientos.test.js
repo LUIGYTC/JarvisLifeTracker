@@ -4,16 +4,74 @@ import { once } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { createApp } from '../src/app.js';
 import { movimientoRow, TEXT_LIMITS, readMovementBody } from '../src/movimientos.js';
-import { createMovementWriter } from '../src/sheets-write.js';
+import { createMovementWriter as realMovementWriter } from '../src/sheets-write.js';
 import { SPREADSHEET_ID, MOVIMIENTOS_RANGE } from '../src/config.js';
 
-const valid = { fecha: '2024-02-29', hora: '23:59', tipo: 'Gasto', categoria: 'Prueba', monto: 1,
+const valid = { operationId: '12345678-1234-4234-8234-123456789abc', fecha: '2024-02-29', hora: '23:59', tipo: 'Gasto', categoria: 'Prueba', monto: 1,
   descripcion: 'Registro controlado', metodo: 'Prueba', origen: 'API', textoOriginal: 'Prueba estructurada' };
 const expected = ['2024-02-29', '23:59', 'Gasto', 'Prueba', 1, 'Registro controlado', 'Prueba', 'API', 'Prueba estructurada'];
 const success = () => ({ status: 200, json: async () => ({ updates: {
   updatedRows: 1, updatedColumns: 9, updatedCells: 9, updatedRange: "'Movimientos'!A2:I2"
 } }) });
 const fakeAuth = { getClient: async () => ({ getRequestHeaders: async () => new Headers({ Authorization: 'Bearer synthetic-service-token' }) }) };
+
+function simulatedSheet({ movementFetch, failure, missing = false, race = false } = {}) {
+  const ledger = [];
+  const movements = [];
+  let exists = !missing;
+  let initialReads = 0;
+  let release;
+  const barrier = new Promise(resolve => { release = resolve; });
+  const json = data => ({ status: 200, json: async () => data });
+  const fetchImpl = async (url, options) => {
+    const path = decodeURIComponent(url.pathname);
+    const body = options.body ? JSON.parse(options.body) : null;
+    if (failure === 'before') throw new Error('provider unavailable');
+    if (path.endsWith(':batchUpdate')) {
+      assert.equal(body.requests[0].addSheet.properties.title, 'Operaciones');
+      assert.equal(body.requests[0].addSheet.properties.hidden, true);
+      if (exists) return { status: 400 };
+      exists = true;
+      return json({ replies: [{}] });
+    }
+    if (!path.includes('/values/')) return json({ sheets: exists ? [{ properties: { title: 'Operaciones' } }] : [] });
+    if (path.includes("'Operaciones'")) {
+      if (options.method === 'GET') {
+        const snapshot = ledger.map(row => [...row]);
+        if (race && initialReads++ < 2) {
+          if (initialReads === 2) release();
+          await barrier;
+        }
+        return json({ values: snapshot });
+      }
+      assert.equal(url.searchParams.get('valueInputOption'), 'RAW');
+      if (options.method === 'POST') {
+        assert.equal(body.values.length, 1);
+        assert.equal(body.values[0].length, 3);
+        ledger.push([...body.values[0]]);
+        if (failure === 'reservation-lost') throw new Error('response lost');
+        return json({ updates: { updatedRows: 1, updatedRange: `Operaciones!A${ledger.length}:C${ledger.length}` } });
+      }
+      if (failure === 'finalize-before') throw new Error('state write failed');
+      const row = Number(/!C(\d+)/.exec(path)[1]);
+      ledger[row - 1][2] = body.values[0][0];
+      if (failure === 'finalize-lost') throw new Error('response lost');
+      return json({ updatedCells: 1 });
+    }
+    if (failure === 'movement-before') throw new Error('unavailable');
+    movements.push(body.values[0]);
+    if (failure === 'movement-lost') throw new Error('response lost');
+    return movementFetch ? movementFetch(url, options) : success();
+  };
+  return { ledger, movements, fetchImpl };
+}
+
+// Existing writer assertions see the financial append while ledger operations
+// are handled by the same persistent simulated Sheet used by idempotency tests.
+function createMovementWriter(options) {
+  const sheet = simulatedSheet({ movementFetch: options.fetchImpl });
+  return realMovementWriter({ ...options, fetchImpl: sheet.fetchImpl });
+}
 
 async function setup(t, options = {}) {
   const writes = [];
@@ -36,6 +94,8 @@ function invalidPayloads() {
   const cases = [null, [], {}, { ...valid, extra: 'x' }, { ...valid, spreadsheetId: 'other' },
     { ...valid, sheet: 'Other' }, { ...valid, identity: 'owner' }];
   for (const key of Object.keys(valid)) { const p = { ...valid }; delete p[key]; cases.push(p); }
+  for (const operationId of ['', null, 1, 'invalid', '12345678-1234-1234-8234-123456789abc',
+    '12345678-1234-4234-7234-123456789abc']) cases.push({ ...valid, operationId });
   for (const fecha of ['2023-02-29', '1900-02-29', '2024-04-31', '2024-00-01', '2024-13-01', '2024-01-00',
     '0000-01-01', '2024-1-01', '24-01-01', '2024-01-01T00:00:00Z', ' 2024-01-01', '=TODAY()', 20240101]) cases.push({ ...valid, fecha });
   for (const hora of ['24:00', '12:60', '1:00', '00:0', '12:00:00', '12:00 ', '=NOW()', null]) cases.push({ ...valid, hora });
@@ -208,4 +268,87 @@ test('body reader bounds chunked input, slow requests and invalid UTF-8', async 
   const invalidPending = readMovementBody(invalid);
   invalid.end(Buffer.from([0xff]));
   await assert.rejects(invalidPending, error => error.status === 400);
+});
+
+test('operation deduplication survives new writer instances and returns duplicate over HTTP', async t => {
+  const sheet = simulatedSheet({ missing: true });
+  const first = await setup(t, { writeMovement: realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl }) });
+  assert.deepEqual(await (await first.request()).json(), { registered: true });
+  const restarted = await setup(t, { writeMovement: realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl }) });
+  const res = await restarted.request(JSON.stringify({ ...valid, operationId: valid.operationId.toUpperCase() }));
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { registered: true, duplicate: true });
+  assert.equal(sheet.movements.length, 1);
+  assert.equal(sheet.ledger.length, 1);
+  assert.equal(sheet.ledger[0][0], valid.operationId);
+  assert.equal(sheet.ledger[0][2], 'registered');
+  assert.equal(sheet.ledger[0].length, 3);
+  assert.ok(Number.isFinite(Date.parse(sheet.ledger[0][1])));
+});
+
+test('lost final response returns duplicate on retry without another financial append', async () => {
+  const sheet = simulatedSheet({ failure: 'finalize-lost' });
+  await assert.rejects(realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl })(valid), /Movement unavailable/);
+  assert.equal(await realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl })(valid), 'duplicate');
+  assert.equal(sheet.movements.length, 1);
+});
+
+test('ambiguous reservation or movement remains pending across instances and cannot be replayed', async t => {
+  for (const failure of ['reservation-lost', 'movement-before', 'movement-lost', 'finalize-before']) {
+    const sheet = simulatedSheet({ failure });
+    const writer = realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl });
+    await assert.rejects(writer(valid), /Movement unavailable/);
+    const count = sheet.movements.length;
+    assert.equal(count, ['movement-lost', 'finalize-before'].includes(failure) ? 1 : 0);
+    const restarted = await setup(t, { writeMovement: realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl }) });
+    const res = await restarted.request();
+    assert.equal(res.status, 409);
+    assert.deepEqual(await res.json(), { error: 'operation_pending' });
+    assert.equal(sheet.movements.length, count);
+    assert.equal(sheet.ledger[0][2], 'pending');
+  }
+});
+
+test('failure before reservation does not write either sheet', async () => {
+  const sheet = simulatedSheet({ failure: 'before' });
+  await assert.rejects(realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl })(valid), /Movement unavailable/);
+  assert.deepEqual(sheet.movements, []);
+  assert.deepEqual(sheet.ledger, []);
+});
+
+test('racing independent instances elect the earliest persistent reservation', async () => {
+  const sheet = simulatedSheet({ race: true });
+  const writers = [realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl }),
+    realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl })];
+  const results = await Promise.allSettled(writers.map(writer => writer(valid)));
+  assert.equal(results.filter(r => r.status === 'fulfilled' && r.value === true).length, 1);
+  assert.ok(results.some(r => r.status === 'rejected' && r.reason.code === 'OPERATION_PENDING'));
+  assert.equal(sheet.movements.length, 1);
+  assert.equal(sheet.ledger.length, 2);
+  assert.equal(await writers[1](valid), 'duplicate');
+});
+
+test('reusing a registered operation ID with another valid payload does not write it', async () => {
+  const sheet = simulatedSheet();
+  const writer = realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl });
+  await writer(valid);
+  assert.equal(await writer({ ...valid, monto: 2 }), 'duplicate');
+  assert.equal(sheet.movements.length, 1);
+  assert.equal(sheet.movements[0][4], 1);
+});
+
+test('lost sheet creation response never causes a financial write and next request discovers the sheet', async () => {
+  const sheet = simulatedSheet({ missing: true });
+  let creations = 0;
+  const fetchImpl = async (url, options) => {
+    const response = await sheet.fetchImpl(url, options);
+    if (url.pathname.endsWith(':batchUpdate')) { creations++; throw new Error('creation response lost'); }
+    return response;
+  };
+  await assert.rejects(realMovementWriter({ auth: fakeAuth, fetchImpl })(valid), /Movement unavailable/);
+  assert.equal(sheet.movements.length, 0);
+  assert.equal(sheet.ledger.length, 0);
+  assert.equal(await realMovementWriter({ auth: fakeAuth, fetchImpl })(valid), true);
+  assert.equal(creations, 1);
+  assert.equal(sheet.movements.length, 1);
 });

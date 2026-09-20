@@ -16,7 +16,7 @@ Abre **http://localhost:8000/** y detén el servidor con Ctrl+C. Usa exactamente
 
 Para desarrollo local, sigue [backend/README.md](backend/README.md) para instalar la API, descubrir tu sub y configurar `AUTHORIZED_GOOGLE_SUB`. `config.js` selecciona por hostname: `localhost` y `127.0.0.1` usan `http://127.0.0.1:8080`; `luigytc.github.io` usa exclusivamente `https://jarvislifetracker-505633966366.northamerica-south1.run.app`. Otros hosts quedan sin backend configurado. Esta selección no amplía los orígenes autorizados por OAuth o CORS: para iniciar sesión localmente sigue usando `http://localhost:8000`.
 
-La versión PWA 2.3.3 renueva la caché de configuración. Publica juntos los recursos frontend modificados y pulsa «Actualizar» cuando aparezca, o cierra todas las ventanas de la PWA y vuelve a abrirla. Una pestaña con una versión anterior puede seguir usando sus scripts hasta activar la actualización. En producción, `auth.js` también rechaza cualquier backend distinto de Cloud Run antes de enviar la identidad.
+La versión PWA 2.3.5 renueva la caché de configuración. Publica juntos los recursos frontend modificados y pulsa «Actualizar» cuando aparezca, o cierra todas las ventanas de la PWA y vuelve a abrirla. Una pestaña con una versión anterior puede seguir usando sus scripts hasta activar la actualización. En producción, `auth.js` también rechaza cualquier backend distinto de Cloud Run antes de enviar la identidad.
 
 1. Con conexión, espera el botón oficial «Continuar con Google» y púlsalo. Usa la cuenta que registraste como usuario de prueba en Google Auth Platform.
 2. Con backend funcionando y tu cuenta autorizada aparece **«Identidad validada; usuario autorizado por el backend.»** Solo se muestra ante el 200 esperado de `POST /auth/me`. Después se consulta automáticamente `GET /api/sheets/status` con el mismo token en memoria: 200 con `{"connected":true}` muestra «Google Sheets conectado.»; cualquier fallo muestra «No se pudo comprobar la conexión con Google Sheets.». No se muestran celdas ni datos financieros. Un fallo de autorización impide consultar Sheets.
@@ -77,32 +77,10 @@ La validación y autorización están implementadas en backend y requieren confi
 
 ## Preparación de autenticación
 
-### Herramienta temporal de escritura (PWA 2.3.4)
-
-Después de autorizar y confirmar «Google Sheets conectado.» aparece
-«Registrar prueba $0.01». Al pulsarlo se pide confirmación explícita para insertar
-la fila fija `PRUEBA CONTROLADA JARVIS 20260920-01`. Cancelar no envía nada.
-Confirmar consume el único intento de esta carga de página, incluso ante error.
-Éxito: «Prueba registrada. Revisa el Sheet.». Un rechazo conocido antes de escribir
-muestra «No se pudo registrar la prueba.». Timeout, red o respuesta ambigua:
-«Resultado incierto. Revisa el Sheet antes de volver a intentar.».
-
-Excepción temporal al descarte inmediato del token: tras conectar Sheets, se
-retiene únicamente en el cierre de auth.js para este botón. Se descarta al iniciar
-el POST, descartar identidad, salir, perder conexión o abrir la demo. No hay
-persistencia ni consultas automáticas para buscar la fila. Una recarga completa
-o una pestaña nueva tiene otro límite de intento; no es idempotencia global.
-Revisar el Sheet antes de repetir en otra carga de página.
-
-Para retirar la herramienta, elimina el botón/párrafo y sus dos propiedades de
-mount en app.js, y los bloques TEMPORARY y hooks asociados en auth.js; restaura
-el descarte incondicional de credential en el finally de receiveIdentity. Actualiza
-la versión del service worker al publicar esa retirada.
-
 El backend también ofrece `POST /api/movimientos` para añadir una fila estructurada
 en la hoja fija Movimientos, con autorización, validación estricta y texto literal
 RAW. No hay formulario ni conexión de la demo a datos reales. El contrato y la
-prueba de una fila controlada están en [backend/README.md](backend/README.md).
+contrato con operationId UUID v4 y los riesgos de atomicidad están en [backend/README.md](backend/README.md).
 
 La arquitectura está en [docs/auth-architecture.md](docs/auth-architecture.md). GIS usa el cliente web público autorizado para `http://localhost:8000` y `https://luigytc.github.io`. No se usa Client Secret. El token se envía exclusivamente desde memoria a `/auth/me` del backend configurado con `no-store`, sin cookies ni redirects; nunca se imprime, decodifica ni persiste. La demo pública no es una barrera de seguridad.
 

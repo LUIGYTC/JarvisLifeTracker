@@ -81,7 +81,7 @@ El servidor estático normal solo sirve recursos públicos permitidos, nunca bac
    ```
 
 4. Abre exactamente `http://localhost:8000/`. Si hay una PWA anterior, pulsa
-   «Actualizar» o cierra sus pestañas y vuelve a abrirla para activar versión 2.3.3.
+   «Actualizar» o cierra sus pestañas y vuelve a abrirla para activar versión 2.3.5.
 5. Google Sign-In envía `POST http://127.0.0.1:8080/auth/me` con Bearer desde memoria,
    sin cookies, cuerpo ni redirects. La cuenta permitida obtiene **«Identidad validada;
    usuario autorizado por el backend.»**
@@ -198,7 +198,7 @@ Los tests inyectan dobles de ADC/Sheets y nunca necesitan credenciales reales.
    credenciales; ADC usa automáticamente la identidad adjunta.
 2. Comprueba `/health`: 200 `{"ok":true}`. Abre `/api/sheets/status` sin token:
    debe devolver 401, no datos. Abrir la URL directamente no prueba autorización.
-3. Publica el frontend y activa la actualización PWA 2.3.3. Inicia sesión desde
+3. Publica el frontend y activa la actualización PWA 2.3.5. Inicia sesión desde
    GitHub Pages. Tras autorizar mediante /auth/me, se consulta automáticamente
    /api/sheets/status reutilizando el token en memoria. No hacen falta breakpoints
    ni copiar tokens. Éxito: «Google Sheets conectado.».
@@ -215,87 +215,10 @@ Los tests inyectan dobles de ADC/Sheets y nunca necesitan credenciales reales.
 Referencias: [ADC](https://docs.cloud.google.com/docs/authentication/application-default-credentials),
 [spreadsheets.get y selección de campos](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get).
 
-## Registrar un movimiento estructurado
+## POST /api/movimientos
 
-`POST /api/movimientos` usa la misma verificación de ID token y comparación de
-usuario autorizado que las otras rutas privadas. El destino está fijado en el
-servidor: spreadsheet configurado y rango `'Movimientos'!A:I`. No acepta campos
-de identidad, spreadsheet, hoja ni ningún campo adicional.
+Requiere operationId UUID v4 y el payload estructurado. La deduplicacion persiste
+en Operaciones del mismo spreadsheet. La UI temporal fue retirada.
 
-Se requiere `Content-Type: application/json` (opcional `charset=utf-8`), sin
-compresión. El cuerpo admite hasta 16 KiB y 5 segundos de lectura. Los nueve campos
-son obligatorios. Fecha: YYYY-MM-DD real entre años 0001 y 9999; hora: HH:MM de
-00:00 a 23:59; tipo: `Gasto` o `Ingreso`; monto: número finito estrictamente
-positivo, sin conversión de strings ni redondeo. Los cinco textos deben tener
-contenido distinto de espacios y estos máximos de unidades UTF-16:
-
-| Campo | Máximo |
-| --- | --- |
-| categoria | 100 |
-| descripcion | 500 |
-| metodo | 100 |
-| origen | 100 |
-| textoOriginal | 2000 |
-
-Los textos se preservan exactamente: no se recortan ni se les añade un apóstrofo.
-La protección contra fórmulas es `valueInputOption=RAW`, que almacena los strings
-literalmente, incluso prefijos `=`, `+`, `-`, `@`, espacios, controles y variantes
-Unicode. Fecha, hora y tipo también son strings RAW; monto permanece numérico.
-No se utiliza `USER_ENTERED`. Esta garantía corresponde a la escritura en Sheets;
-una futura exportación CSV necesitaría su propia política de seguridad.
-
-La escritura usa ADC con scope `spreadsheets`, sin dependencia nueva. La consulta
-de estado mantiene su cliente de solo lectura. `values.append` con `INSERT_ROWS`
-envía una sola fila en orden Fecha, Hora, Tipo, Categoría, Monto, Descripción,
-Método, Origen, Texto original, después de la tabla existente en Movimientos A:I.
-No envía operaciones a otras hojas ni sobrescribe filas. Google debe confirmar
-una fila, nueve columnas y nueve celdas en A:I antes de responder éxito.
-
-Respuestas mínimas, siempre `no-store`: 200 `{"registered":true}`; 400
-`{"error":"invalid_movement"}` por validación; 413 por tamaño; 408 por lectura
-lenta; 415 por formato de contenido; 401/403 por identidad/autorización; 503
-`{"error":"movement_unavailable"}` si no se confirma la escritura. Ninguna
-respuesta ni log incluye el movimiento o el error interno de Google.
-
-No hay reintentos automáticos ni redirects al escribir. El límite de 8 segundos
-incluye ADC y la respuesta de Sheets. **Una respuesta perdida o timeout puede
-ocurrir después de insertar la fila.** No hay garantía de idempotencia entre
-peticiones independientes: antes de reintentar, comprobar manualmente la hoja
-para evitar duplicar un movimiento. No se afirma éxito ante un resultado incierto.
-
-### Prueba controlada después del despliegue (una fila real)
-
-Despliega solo el backend conservando su service account con acceso Editor. No
-hace falta modificar frontend, GIS, caché PWA ni configuración de credenciales.
-Esta prueba todavía no se ha ejecutado contra el Sheet real.
-
-En GitHub Pages, abre DevTools → Sources → auth.js y coloca un breakpoint en la
-línea `const authorizedMessage`, después de que /auth/me haya autorizado. Inicia
-sesión normalmente. Ejecuta **una sola vez** el siguiente fragmento en ese ámbito
-pausado: referencia `credential` en memoria, sin copiar ni imprimir su valor.
-Después reanuda y retira el breakpoint. No exportes HAR ni cabeceras.
-
-```js
-void fetch('https://jarvislifetracker-505633966366.northamerica-south1.run.app/api/movimientos', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` },
-  credentials: 'omit', cache: 'no-store', redirect: 'error',
-  signal: AbortSignal.timeout(20000),
-  body: JSON.stringify({
-    fecha: '2026-09-20', hora: '12:00', tipo: 'Gasto', categoria: 'Prueba técnica',
-    monto: 0.01, descripcion: 'PRUEBA CONTROLADA JARVIS 20260920-01',
-    metodo: 'Prueba', origen: 'Verificación manual API',
-    textoOriginal: 'Fila técnica explícita; no representa un gasto real'
-  })
-}).then(async result => {
-  console.log(result.status, await result.json());
-}).catch(() => console.log('Resultado incierto; revisar la hoja antes de reintentar'));
-```
-
-Esperado: 200 `{"registered":true}` y exactamente una fila nueva con el marcador
-`PRUEBA CONTROLADA JARVIS 20260920-01`. No ejecutar el fragmento otra vez para
-comprobar el resultado. Revisar la fila directamente en Sheets. La interfaz de
-Jarvis sigue mostrando solo el estado de conexión, sin formulario ni datos reales.
-
-Referencias: [append e INSERT_ROWS](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/append),
-[RAW](https://developers.google.com/workspace/sheets/api/reference/rest/v4/ValueInputOption).
+Contrato, algoritmo, respuestas y limites de atomicidad:
+[Registro e idempotencia](../docs/movimientos-idempotency.md).

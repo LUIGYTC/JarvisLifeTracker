@@ -84,9 +84,14 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
           return reply(res, error.status || 400, { error: 'invalid_movement' });
         }
         try {
-          if (await writeMovement(movement) !== true) throw new Error('Write failed');
-          return reply(res, 200, { registered: true });
-        } catch { return reply(res, 503, { error: 'movement_unavailable' }); }
+          const result = await writeMovement(movement);
+          if (result !== true && result !== 'duplicate') throw new Error('Write failed');
+          return reply(res, 200, result === 'duplicate' ? { registered: true, duplicate: true } : { registered: true });
+        } catch (error) {
+          return error.code === 'OPERATION_PENDING'
+            ? reply(res, 409, { error: 'operation_pending' })
+            : reply(res, 503, { error: 'movement_unavailable' });
+        }
       }
       if (req.url === '/api/sheets/status') {
         try {
