@@ -3,7 +3,8 @@
 Node.js 24, HTTP nativo y una dependencia directa: `google-auth-library`. La
 librería oficial verifica firma, audiencia, emisor y tiempo usando claves públicas
 rotatorias de Google. También exigimos `exp` futuro estricto y `sub` no vacío.
-Sin Client Secret, credenciales Cloud, Service Account JSON ni conexión Sheets.
+Sin Client Secret ni Service Account JSON. La comprobación de Sheets usa ADC
+con la identidad de ejecución de Cloud Run, sin claves descargadas.
 
 ## Instalación y variables privadas
 
@@ -155,7 +156,73 @@ cabeceras Bearer/cuerpos. Se necesita salida HTTPS a las claves públicas de Goo
 El endpoint debe ser invocable por el navegador a nivel de plataforma; **el código
 de la API valida y autoriza**. No confundir el ID token GIS (audiencia cliente OAuth)
 con IAM de invocación Cloud Run (otra audiencia). La identidad de ejecución tendrá
-permisos mínimos y ningún permiso Sheets en esta fase. No hace falta descargar claves.
+acceso al spreadsheet compartido. La comprobación solicita alcance de solo lectura.
+No hace falta descargar claves ni configurar GOOGLE_APPLICATION_CREDENTIALS en Cloud Run.
 
 Referencias: [validación Google](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token),
 [contrato Cloud Run](https://docs.cloud.google.com/run/docs/container-contract).
+
+## Comprobación privada de Google Sheets
+
+`GET /api/sheets/status` atraviesa exactamente la misma verificación de ID token
+y autorización de usuario que `POST /auth/me`. No acepta identificadores, rangos
+ni tokens en query/cuerpo. Solo después de autorizar invoca Google Sheets API con
+la service account de ejecución mediante Application Default Credentials (ADC).
+El token GIS del usuario no se envía a Google Sheets.
+
+`src/config.js` fija el identificador público del spreadsheet exclusivamente en el
+backend. `src/sheets.js` reutiliza `google-auth-library`, con alcance
+`https://www.googleapis.com/auth/spreadsheets.readonly`, GET `spreadsheets.get`
+y máscara `fields=spreadsheetId`. No solicita celdas, títulos, saldos ni movimientos,
+no escribe y no devuelve el identificador. El plazo total es de 8 segundos,
+incluida la obtención del cliente ADC; los errores del proveedor no se registran
+ni se devuelven. No se requiere una dependencia nueva.
+
+| Situación | Respuesta |
+| --- | --- |
+| Usuario autorizado y acceso real al spreadsheet | 200 `{"connected":true}` |
+| Token ausente, inválido o expirado | 401 `{"error":"invalid_identity"}` |
+| Usuario válido no autorizado | 403 `{"error":"not_authorized"}` |
+| Autorización de usuario sin configurar | 503 `{"error":"authorization_unavailable"}` |
+| ADC, permisos Sheets, red, cuota, timeout o respuesta inesperada | 503 `{"error":"sheets_unavailable"}` |
+
+Todas llevan `Cache-Control: no-store`. `/health` sigue siendo público y mínimo;
+no consulta Sheets. `/auth/me` conserva su respuesta y no depende de Sheets.
+Los tests inyectan dobles de ADC/Sheets y nunca necesitan credenciales reales.
+
+### Verificar después del despliegue en Cloud Run
+
+1. Despliega la nueva imagen conservando la service account y la configuración
+   privada de autorización actuales. Sheets API debe estar habilitada y el archivo
+   compartido con esa misma cuenta. No añadas archivos de claves ni variables de
+   credenciales; ADC usa automáticamente la identidad adjunta.
+2. Comprueba `/health`: 200 `{"ok":true}`. Abre `/api/sheets/status` sin token:
+   debe devolver 401, no datos. Abrir la URL directamente no prueba autorización.
+3. Para la comprobación autenticada sin cambiar GIS ni persistir tokens, abre la
+   PWA en GitHub Pages y DevTools → Sources → `auth.js`. Pon un breakpoint en la
+   primera línea de `receiveIdentity(response)` e inicia sesión normalmente con
+   la cuenta autorizada. Cuando se pause en ese callback, ejecuta en la consola
+   este código, que referencia el token en memoria sin copiarlo ni imprimirlo:
+
+   ```js
+   void fetch('https://jarvislifetracker-505633966366.northamerica-south1.run.app/api/sheets/status', {
+     method: 'GET',
+     headers: { Authorization: `Bearer ${response.credential}` },
+     credentials: 'omit', cache: 'no-store', redirect: 'error',
+     signal: AbortSignal.timeout(15000)
+   }).then(async result => {
+     console.log(result.status, await result.json());
+   }).catch(() => console.log('No se pudo comprobar la conexión'));
+   ```
+
+4. Reanuda la ejecución para que se complete el flujo y se descarte la credencial.
+   Resultado esperado: 200 y únicamente `{"connected":true}`. `/auth/me` debe
+   seguir funcionando. Retira el breakpoint; no exportes HAR ni copies headers
+   Authorization. El historial del fragmento contiene código, no el token.
+5. Otra cuenta válida debe recibir 403. Si el usuario autorizado recibe 503
+   `sheets_unavailable`, revisa la identidad de ejecución, la compartición del
+   archivo, API habilitada y conectividad/cuota; el endpoint no expone detalles
+   internos. Los errores y el timeout ya están cubiertos con dobles en tests.
+
+Referencias: [ADC](https://docs.cloud.google.com/docs/authentication/application-default-credentials),
+[spreadsheets.get y selección de campos](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get).

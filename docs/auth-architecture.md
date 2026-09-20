@@ -1,7 +1,7 @@
 # Arquitectura de autenticación de Jarvis
 
 Estado: GIS frontend y API Node implementados, con URL de Cloud Run configurada
-para GitHub Pages. Sin Sheets ni datos privados conectados. La cuenta única requiere configuración privada: nunca
+para GitHub Pages. Comprobación de acceso a Sheets solo en backend, sin celdas ni datos financieros en la interfaz. La cuenta única requiere configuración privada: nunca
 se autoriza automáticamente a la primera cuenta que inicia sesión.
 
 ```text
@@ -12,11 +12,11 @@ GitHub Pages PWA /JarvisLifeTracker/ (pública)
   → google-auth-library verifica firma, aud, iss, exp
   → comparar sub verificado con AUTHORIZED_GOOGLE_SUB del servidor
   → 200 { authenticated: true, authorized: true }, o denegar
-  → Sheets privado: solo una fase posterior desde el backend
+  → GET /api/sheets/status reutiliza esa autorización antes de consultar Sheets con ADC
 ```
 
 Se cambia el contrato anterior GET /auth/me a **POST**, conforme al requisito actual.
-La librería oficial se instala solo en backend. Node HTTP nativo sirve dos rutas;
+La librería oficial se instala solo en backend. Node HTTP nativo sirve tres rutas;
 no hace falta framework, Client Secret ni credenciales Cloud para verificar ID tokens.
 
 ## Frontera de seguridad
@@ -83,15 +83,20 @@ en privado; no debe pegar tokens o el identificador aquí ni en Git.
 | AUTHORIZED_GOOGLE_SUB | Identificador privado; solo entorno backend |
 | Tokens y claves privadas | Secretos; nunca Git, logs o almacenamiento frontend |
 | OAuth Client Secret | No se usa |
-| ID Sheet/rangos/identidad de servicio | Configuración privada de una fase futura |
+| ID Sheet | Identificador público fijo, exclusivamente en configuración backend |
+| Identidad de servicio | Service account adjunta a Cloud Run; credenciales automáticas ADC |
 
-## Cloud Run y conexión posterior a Sheets
+## Cloud Run y comprobación de Sheets
 
 Contenedor Node 24, usuario node no-root, escucha PORT en 0.0.0.0 sin archivos
 privados ni bootstrap. Cloud Run termina TLS. La API es invocable por navegador
 y autoriza en su código; no confundir audiencia OAuth GIS con IAM Cloud Run.
 
-Solo posteriormente el backend accederá a una hoja privada con identidad adjunta,
-permisos mínimos y rangos fijos. Nunca se publicará la hoja ni se enviarán credenciales
-de servicio al frontend. No habrá proxy de hojas arbitrarias. No se crean recursos
-externos adicionales para conectar el frontend al servicio existente.
+El backend comprueba acceso al spreadsheet fijo mediante `GoogleAuth` (ADC) y el
+alcance `spreadsheets.readonly`. Usa `spreadsheets.get` con `fields=spreadsheetId`;
+no solicita celdas ni títulos. La respuesta de la API propia es solo
+`{"connected":true}` o un error genérico sin datos del proveedor. El plazo de la
+comprobación es de 8 segundos. No se envía el ID token del usuario a Sheets.
+La biblioteca administra el access token de servicio en memoria en el backend.
+No hay escrituras, proxy de hojas arbitrarias ni credenciales de servicio en el
+frontend. `/health` y `/auth/me` no dependen de la disponibilidad de Sheets.

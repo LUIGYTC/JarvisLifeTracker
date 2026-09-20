@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { ALLOWED_ORIGINS } from './config.js';
 import { createVerifier } from './verify.js';
+import { createSheetsCheck } from './sheets.js';
 
 export function reply(res, status, body) {
   res.writeHead(status, {
@@ -18,7 +19,8 @@ export function bearerToken(req) {
   return match && match[1].length <= 12000 ? match[1] : null;
 }
 
-export function createApp({ authorizedSub = '', verify = createVerifier(), verificationTimeoutMs = 10000 } = {}) {
+export function createApp({ authorizedSub = '', verify = createVerifier(), verificationTimeoutMs = 10000,
+  checkSheets = createSheetsCheck() } = {}) {
   const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000 }, async (req, res) => {
     try {
       res.setHeader('Vary', 'Origin');
@@ -27,7 +29,8 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
         return reply(res, 403, { error: 'origin_not_allowed' });
       }
       if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
-      const method = req.url === '/auth/me' ? 'POST' : req.url === '/health' ? 'GET' : null;
+      const method = req.url === '/auth/me' ? 'POST'
+        : ['/health', '/api/sheets/status'].includes(req.url) ? 'GET' : null;
       if (!method) return reply(res, 404, { error: 'not_found' });
       if (req.method === 'OPTIONS') {
         const requested = (req.headers['access-control-request-headers'] || '')
@@ -67,6 +70,14 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
       }
       if (!authorizedSub) return reply(res, 503, { error: 'authorization_unavailable' });
       if (sub !== authorizedSub) return reply(res, 403, { error: 'not_authorized' });
+      if (req.url === '/api/sheets/status') {
+        try {
+          if (await checkSheets() !== true) throw new Error('Sheets unavailable');
+          return reply(res, 200, { connected: true });
+        } catch {
+          return reply(res, 503, { error: 'sheets_unavailable' });
+        }
+      }
       return reply(res, 200, { authenticated: true, authorized: true });
     } catch {
       if (!res.headersSent) reply(res, 500, { error: 'internal_error' });

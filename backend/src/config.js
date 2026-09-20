@@ -1,5 +1,7 @@
 // Public audience; never take the expected audience from a request.
 export const GOOGLE_CLIENT_ID = '505633966366-vfpj4puk76rksfoankm4bljdq4m5gpb4.apps.googleusercontent.com';
+// Public identifier, server-side only; never selected by a request.
+export const SPREADSHEET_ID = '1C2yE-xgv8IZMx9TrOdymMKvLoXpep917HAXD9Cr3Upg';
 export const ALLOWED_ORIGINS = new Set([
   'http://localhost:8000',
   'https://luigytc.github.io'

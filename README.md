@@ -1,6 +1,6 @@
 ﻿# JarvisLifeTracker
 
-PWA estática sin frameworks. Google Identity Services obtiene la identidad y la API separada en `backend/` valida el token y autoriza una única cuenta configurada en su entorno privado. No hay Sheets ni datos financieros. «Explorar demo sin iniciar sesión» permanece público. No hay credenciales privadas en el repositorio.
+PWA estática sin frameworks. Google Identity Services obtiene la identidad y la API separada en `backend/` valida el token y autoriza una única cuenta configurada en su entorno privado. El backend permite comprobar acceso a un Sheet privado sin leer celdas ni exponer datos financieros. «Explorar demo sin iniciar sesión» permanece público. No hay credenciales privadas en el repositorio.
 
 ## Ejecutar localmente
 
@@ -73,7 +73,7 @@ Si ya abriste la versión antigua, la primera recarga puede mostrar su HTML alma
 - icons/icon-192.png e icons/icon-512.png: iconos PNG generados localmente, con monograma J sobre fondo oscuro; no requieren recursos externos.
 - scripts/serve.cjs: servidor local sin dependencias, requiere Node.js.
 
-La validación y autorización están implementadas en backend y requieren configurar el sub privado. El frontend está configurado para la API desplegada en Cloud Run; publicar juntos `config.js` y `sw.js` permite que GitHub Pages y las instalaciones PWA reciban la conexión. No hay Google Sheets ni datos financieros reales.
+La validación y autorización están implementadas en backend y requieren configurar el sub privado. El frontend está configurado para la API desplegada en Cloud Run; publicar juntos los recursos frontend modificados y `sw.js` permite actualizar las instalaciones PWA. La comprobación autenticada `GET /api/sheets/status` usa ADC exclusivamente en backend y devuelve solo conectividad. La interfaz no está conectada a datos financieros reales. Procedimiento de verificación en [backend/README.md](backend/README.md#comprobación-privada-de-google-sheets).
 
 ## Preparación de autenticación
 
