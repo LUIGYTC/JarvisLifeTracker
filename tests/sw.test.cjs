@@ -65,3 +65,57 @@ test('Authorization and no-store bypass even static assets and entry navigations
   }
   assert.deepEqual(hits, []);
 });
+
+test('update reloads configuration and removes the previous app cache on activation', async () => {
+  const handlers = {};
+  const oldCache = 'jarvislifetracker:/JarvisLifeTracker/:2.3.1';
+  const unrelated = 'jarvislifetracker:/another-project/:2.3.1';
+  const stored = new Map([[oldCache, new Map()], [unrelated, new Map()]]);
+  let installedCache;
+  let requests;
+  let claimed = false;
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), {
+    URL, Request, Response, console,
+    self: {
+      location: { href: `${base}sw.js` },
+      addEventListener: (name, handler) => { handlers[name] = handler; },
+      clients: { claim: async () => { claimed = true; } }
+    },
+    caches: {
+      keys: async () => [...stored.keys()],
+      delete: async key => stored.delete(key),
+      open: async key => {
+        if (!stored.has(key)) stored.set(key, new Map());
+        return {
+          addAll: async entries => {
+            installedCache = key;
+            requests = entries;
+            for (const request of entries) {
+              const source = request.url === base + 'config.js'
+                ? fs.readFileSync(path.join(root, 'config.js'), 'utf8') : 'static shell';
+              stored.get(key).set(request.url, new Response(source));
+            }
+          },
+          match: async url => stored.get(key).get(url)?.clone()
+        };
+      }
+    }
+  });
+  let pending;
+  handlers.install({ waitUntil: promise => { pending = promise; } });
+  await pending;
+  assert.notEqual(installedCache, oldCache);
+  assert.ok(requests.some(request => request.url === base + 'config.js'));
+  assert.ok(requests.every(request => request.cache === 'reload'));
+  handlers.activate({ waitUntil: promise => { pending = promise; } });
+  await pending;
+  assert.equal(stored.has(oldCache), false);
+  assert.equal(stored.has(unrelated), true);
+  assert.equal(claimed, true);
+  let response;
+  handlers.fetch({ request: new Request(base + 'config.js'), respondWith: value => { response = value; } });
+  const window = { location: new URL(base) };
+  vm.runInNewContext(await (await response).text(), { window });
+  assert.equal(window.JarvisConfig.apiBaseUrl,
+    'https://jarvislifetracker-505633966366.northamerica-south1.run.app');
+});

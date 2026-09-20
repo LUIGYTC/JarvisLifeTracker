@@ -21,8 +21,14 @@
     const base = window.JarvisConfig?.apiBaseUrl;
     if (!base) return null;
     const url = new URL(base);
-    const local = window.location.origin === 'http://localhost:8000' &&
-      ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+    const local = ['localhost', '127.0.0.1'].includes(window.location.hostname) &&
+      ['http:', 'https:'].includes(window.location.protocol) &&
+      url.origin === 'http://127.0.0.1:8080';
+    // Reject stale or overridden configuration before sending any identity.
+    if (window.location.hostname === 'luigytc.github.io' &&
+        url.origin !== 'https://jarvislifetracker-505633966366.northamerica-south1.run.app') {
+      throw new Error('Invalid production API origin');
+    }
     if ((url.protocol !== 'https:' && !(local && url.protocol === 'http:')) ||
         url.username || url.password || url.search || url.hash || url.pathname !== '/') {
       throw new Error('Invalid API origin');

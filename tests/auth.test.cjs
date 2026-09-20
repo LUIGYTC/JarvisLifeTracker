@@ -12,7 +12,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   const timers = new Map();
   const calls = { initialize: 0 };
   const forbidden = () => { throw new Error('Unexpected storage, logging, decoding or API access'); };
-  const window = { location: { origin }, JarvisConfig: { apiBaseUrl }, addEventListener: (type, listener) => { events[type] = listener; } };
+  const window = { location: origin === 'null' ? new URL('file:///index.html') : new URL(origin), JarvisConfig: { apiBaseUrl }, addEventListener: (type, listener) => { events[type] = listener; } };
   if (useConfig) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../config.js'), 'utf8'), { window });
   const navigator = { onLine: online };
   const id = {
@@ -163,7 +163,11 @@ test('only a strict backend 200 authorizes; tokens use no-store bearer POST', as
 test('configured frontend origins send identity to their intended backend', async () => {
   for (const [origin, endpoint] of [
     ['http://localhost:8000', 'http://127.0.0.1:8080/auth/me'],
-    ['https://luigytc.github.io', 'https://jarvislifetracker-505633966366.northamerica-south1.run.app/auth/me']
+    ['http://127.0.0.1:8000', 'http://127.0.0.1:8080/auth/me'],
+    ['http://localhost:8001', 'http://127.0.0.1:8080/auth/me'],
+    ['https://luigytc.github.io/JarvisLifeTracker/', 'https://jarvislifetracker-505633966366.northamerica-south1.run.app/auth/me'],
+    ['https://luigytc.github.io/JarvisLifeTracker/index.html?apiBaseUrl=http://127.0.0.1:8080', 'https://jarvislifetracker-505633966366.northamerica-south1.run.app/auth/me'],
+    ['http://luigytc.github.io', 'https://jarvislifetracker-505633966366.northamerica-south1.run.app/auth/me']
   ]) {
     let requests = 0;
     const h = harness({ origin, useConfig: true, fetchImpl: async (url, options) => {
@@ -186,8 +190,8 @@ test('configured frontend origins send identity to their intended backend', asyn
 });
 
 test('unsupported frontend origins never send identity to a backend', async () => {
-  for (const origin of ['http://127.0.0.1:8000', 'http://localhost:8001',
-    'http://luigytc.github.io', 'https://luigytc.github.io.example.test', 'null']) {
+  for (const origin of ['https://example.test', 'http://localhost.example.test:8000',
+    'https://luigytc.github.io.example.test', 'null']) {
     let requests = 0;
     const h = harness({ origin, useConfig: true, fetchImpl: async () => { requests++; } });
     const ui = h.mount();
@@ -196,6 +200,21 @@ test('unsupported frontend origins never send identity to a backend', async () =
     await h.calls.config.callback({ credential: 'synthetic-test-value' });
     assert.equal(requests, 0);
     assert.match(ui.status.textContent, /falta configurar el backend/);
+  }
+});
+
+test('Pages rejects stale local and unexpected HTTPS backends before sending identity', async () => {
+  for (const apiBaseUrl of ['http://127.0.0.1:8080', 'http://localhost:8080',
+    'https://127.0.0.1:8080', 'https://api.example.test']) {
+    let requests = 0;
+    const h = harness({ origin: 'https://luigytc.github.io/JarvisLifeTracker/', apiBaseUrl,
+      fetchImpl: async () => { requests++; } });
+    const ui = h.mount();
+    await settle();
+    h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    assert.equal(requests, 0);
+    assert.match(ui.status.textContent, /No se pudo confirmar/);
   }
 });
 

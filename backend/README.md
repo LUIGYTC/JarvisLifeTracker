@@ -80,7 +80,7 @@ El servidor estático normal solo sirve recursos públicos permitidos, nunca bac
    ```
 
 4. Abre exactamente `http://localhost:8000/`. Si hay una PWA anterior, pulsa
-   «Actualizar» o cierra sus pestañas y vuelve a abrirla para activar versión 2.3.1.
+   «Actualizar» o cierra sus pestañas y vuelve a abrirla para activar versión 2.3.2.
 5. Google Sign-In envía `POST http://127.0.0.1:8080/auth/me` con Bearer desde memoria,
    sin cookies, cuerpo ni redirects. La cuenta permitida obtiene **«Identidad validada;
    usuario autorizado por el backend. Todavía no hay datos privados conectados.»**
@@ -90,8 +90,9 @@ El servidor estático normal solo sirve recursos públicos permitidos, nunca bac
    con Authorization ni copies comandos cURL que contengan tokens reales.
 
 `../config.js` define la URL pública de API: `http://127.0.0.1:8080` desde
-`http://localhost:8000` y `https://jarvislifetracker-505633966366.northamerica-south1.run.app`
-desde `https://luigytc.github.io`. Los demás orígenes quedan sin backend configurado.
+los hosts `localhost`/`127.0.0.1` y `https://jarvislifetracker-505633966366.northamerica-south1.run.app`
+desde el host `luigytc.github.io`. Los demás hosts quedan sin backend configurado.
+OAuth y CORS siguen requiriendo `http://localhost:8000` para el login local.
 HTTP solo se permite a loopback desde el origen local. Jamás poner identificadores
 personales o credenciales en esa configuración.
 

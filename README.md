@@ -14,7 +14,9 @@ Abre **http://localhost:8000/** y detén el servidor con Ctrl+C. Usa exactamente
 
 ## Probar Google Sign-In
 
-Para desarrollo local, sigue [backend/README.md](backend/README.md) para instalar la API, descubrir tu sub y configurar `AUTHORIZED_GOOGLE_SUB`. `config.js` apunta a `http://127.0.0.1:8080` desde `http://localhost:8000` y a `https://jarvislifetracker-505633966366.northamerica-south1.run.app` desde `https://luigytc.github.io`. Los demás orígenes quedan sin backend configurado.
+Para desarrollo local, sigue [backend/README.md](backend/README.md) para instalar la API, descubrir tu sub y configurar `AUTHORIZED_GOOGLE_SUB`. `config.js` selecciona por hostname: `localhost` y `127.0.0.1` usan `http://127.0.0.1:8080`; `luigytc.github.io` usa exclusivamente `https://jarvislifetracker-505633966366.northamerica-south1.run.app`. Otros hosts quedan sin backend configurado. Esta selección no amplía los orígenes autorizados por OAuth o CORS: para iniciar sesión localmente sigue usando `http://localhost:8000`.
+
+La versión PWA 2.3.2 renueva la caché de configuración. Publica juntos los recursos frontend modificados y pulsa «Actualizar» cuando aparezca, o cierra todas las ventanas de la PWA y vuelve a abrirla. Una pestaña con una versión anterior puede seguir usando sus scripts hasta activar la actualización. En producción, `auth.js` también rechaza cualquier backend distinto de Cloud Run antes de enviar la identidad.
 
 1. Con conexión, espera el botón oficial «Continuar con Google» y púlsalo. Usa la cuenta que registraste como usuario de prueba en Google Auth Platform.
 2. Con backend funcionando y tu cuenta autorizada debe aparecer **«Identidad validada; usuario autorizado por el backend. Todavía no hay datos privados conectados.»** Solo se muestra ante el 200 esperado de `POST /auth/me`. No se muestra perfil/correo ni se decodifica el JWT. Un 401/403/503, error de red o respuesta inesperada no confirma autorización. Sin URL backend se indica que falta configurarlo.

@@ -37,9 +37,10 @@ La credencial vive en un cierre hasta terminar la petición y entonces se descar
 No se guarda en localStorage, sessionStorage, IndexedDB, cookies propias o archivos.
 No se imprime, decodifica ni exporta. Google gestiona sus propias cookies de sesión.
 
-config.js define solo URL pública: `http://127.0.0.1:8080` desde `http://localhost:8000`
+config.js define solo URL pública: `http://127.0.0.1:8080` desde los hosts locales `localhost`/`127.0.0.1`
 y `https://jarvislifetracker-505633966366.northamerica-south1.run.app` desde
-`https://luigytc.github.io`; queda vacía en otros orígenes.
+el host `luigytc.github.io`; queda vacía en otros hosts. Esta selección no amplía CORS ni OAuth.
+Antes de enviar identidad desde GitHub Pages, auth.js exige el origen exacto de Cloud Run.
 No se toma de parámetros de página ni respuestas.
 Fuera de loopback se exige HTTPS. Peticiones con credentials: omit, cache: no-store,
 redirect: error y timeout; token solo al /auth/me del origen configurado. Solo un
