@@ -5,6 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 function setup() {
   const window = {};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../descanso.js"), "utf8"), { window });
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../rutinas.js'), 'utf8'), { window, AbortController });
   const root = { innerHTML: '', contains: () => true, querySelector() { return { focus() {} }; } };
   const calendar = window.JarvisRutinas.mount(root, () => new Date(2024, 0, 31, 12));
@@ -57,7 +58,7 @@ test('opening loads visible month once; operational date and multiple blocks ren
   calendar.open(); calendar.open();
   assert.match(root.innerHTML, /Cargando turnos/);
   await settle(); calendar.open();
-  assert.deepEqual(calls, [['2024-01-01', '2024-01-31']]);
+  assert.deepEqual(calls, [['2023-12-30', '2024-02-02']]);
   assert.match(root.innerHTML, /data-day="22"[^>]*aria-label="[^"]*, 2 turnos/);
   assert.doesNotMatch(root.innerHTML, /data-day="21"[^>]*aria-label="[^"]*turnos/);
   click({ day: '22' });
@@ -72,7 +73,7 @@ test('month changes request exact ranges; stale and post-logout responses cannot
   const pending = [];
   calendar.setReader((from, to, signal) => new Promise(resolve => pending.push({ from, to, signal, resolve })));
   calendar.open(); click({ action: 'next' });
-  assert.deepEqual(pending.map(p => [p.from, p.to]), [['2024-01-01', '2024-01-31'], ['2024-02-01', '2024-02-29']]);
+  assert.deepEqual(pending.map(p => [p.from, p.to]), [['2023-12-30', '2024-02-02'], ['2024-01-30', '2024-03-02']]);
   assert.equal(pending[0].signal.aborted, true);
   pending[0].resolve({ turnos: [shift()] }); await settle();
   assert.doesNotMatch(root.innerHTML, /shift-summary/);
@@ -94,4 +95,19 @@ test('API failure and malformed response leave calendar usable; demo without rea
   calendar.setReader(async () => ({ turnos: [shift({ horaInicio: '<script>' })] }));
   calendar.open(); await settle();
   assert.match(root.innerHTML, /No se pudieron cargar los turnos/);
+});
+
+test('rest uses previous month context, stays secondary and is cleared on reset', async () => {
+  const { calendar, root, click } = setup();
+  calendar.setReader(async () => ({ turnos: [
+    shift({ fechaTurno: '2023-12-31', inicioReal: '2023-12-31T15:00:00', finReal: '2023-12-31T23:00:00' }),
+    shift({ fechaTurno: '2024-01-01', inicioReal: '2024-01-01T06:00:00', finReal: '2024-01-01T14:00:00', horaInicio: '06:00', horaFin: '14:00' })
+  ] }));
+  calendar.open(); await settle(); click({ day: '1' });
+  assert.match(root.innerHTML, /Recuperación prioritaria/);
+  assert.match(root.innerHTML, /23:00 \(31\/12\/2023\)/);
+  assert.match(root.innerHTML, /no son sueño registrado/);
+  assert.doesNotMatch(root.innerHTML, /Dormiste/);
+  click({ day: '2' }); assert.match(root.innerHTML, /Sin horario laboral que condicione el descanso/);
+  calendar.reset(); assert.doesNotMatch(root.innerHTML, /rest-indicator|Sueño recomendado/);
 });

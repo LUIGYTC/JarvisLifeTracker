@@ -43,6 +43,6 @@ autenticación durante la sesión de página para consultar Turnos al cambiar de
 Se descarta al salir, perder conexión, iniciar otro login o recibir 401/403 en
 Turnos. La navegación conserva el dashboard en memoria sin persistir identidad.
 
-Caché estática 2.3.10 incluye navigation.js y rutinas.js. Se mantienen las exclusiones de
+Caché estática 2.3.11 incluye navigation.js, rutinas.js y descanso.js. Se mantienen las exclusiones de
 API, Authorization y no-store. Publicar conjuntamente los assets y activar la nueva
 versión al desplegar posteriormente. Finanzas conserva su fuente y funcionamiento.

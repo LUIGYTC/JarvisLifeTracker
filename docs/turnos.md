@@ -41,7 +41,8 @@ decisiones quedan pendientes para el futuro motor; no inferir instantes UTC.
 
 ## Calendario y privacidad
 
-Rutinas consulta al abrirse y al cambiar el mes. Reabrir el mismo mes cargado o
+Rutinas consulta al abrirse y al cambiar el mes. Desde v0.3.2 incluye dos días
+adyacentes a cada lado para [calcular descanso](descanso.md). Reabrir el mismo mes cargado o
 pendiente no duplica la petición. Cambiar de mes aborta la anterior y descarta
 respuestas atrasadas. Solo conserva el mes actual en memoria. Para refrescar
 tras editar manualmente Sheets se puede cambiar de mes y regresar. Tras un error,
@@ -59,7 +60,7 @@ descarta la sesión y solicita Google otra vez; no hay refresh automático.
 Se usan credentials:omit, redirect:error, no-store y timeout de 12 segundos.
 El backend aplica timeout de 8 segundos a Sheets, CORS existente y no-store.
 
-Caché estática 2.3.10. /api/turnos y demás respuestas privadas no se cachean.
+Caché estática actual 2.3.11. /api/turnos y demás respuestas privadas no se cachean.
 Sin dependencias nuevas, almacenamiento de navegador, cookies ni credenciales
 nuevas. Pruebas con fixtures sintéticos y Sheets simulado; no se consultaron
 datos reales ni se desplegó. Pendiente verificación visual en iPhone y lectura

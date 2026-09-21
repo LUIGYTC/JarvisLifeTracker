@@ -20,19 +20,37 @@
     let reader = null, opened = false, request = null, revision = 0, loadedKey = '', state = 'empty', turnos = [];
     const key = day => `${String(year).padStart(4, '0')}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const blocks = day => turnos.filter(item => item.fechaTurno === key(day));
+    let descanso = [], descansoError = false;
+    const restLabels = { ideal: 'Descanso ideal', reducido: 'Descanso reducido', recuperacion_prioritaria: 'Recuperación prioritaria' };
+    const restFor = day => descanso.filter(item => item.fechaTurno === key(day));
+    function clearRest() { descanso = []; descansoError = false; }
+    function restDetail() {
+      if (state !== 'loaded') return '';
+      if (descansoError) return '<p>No se pudo calcular el descanso.</p>';
+      const items = restFor(selected);
+      if (!items.length) return '<p class="muted">Sin horario laboral que condicione el descanso.</p>';
+      const labelTime = timestamp => `${timestamp.slice(11, 16)} (${timestamp.slice(8, 10)}/${timestamp.slice(5, 7)}/${timestamp.slice(0, 4)})`;
+      return `<section class="rest-detail"><h3>Sueño recomendado</h3><p class="muted">Objetivos calculados según los turnos disponibles; no son sueño registrado.</p>${items.map(item => `<div class="rest-block"><h4>Antes del trabajo del ${labelTime(item.inicioTrabajo)}</h4><p>${restLabels[item.estado]}</p><p>Despertar objetivo: ${labelTime(item.despertar)}</p><p>Objetivo ideal: ${item.objetivoHoras} h · Mínimo práctico: ${item.minimoHoras} h</p>${item.ventana ? `<p>${item.estado === 'ideal' ? 'Ventana ideal' : 'Espacio disponible'}: ${labelTime(item.ventana.inicio)} → ${labelTime(item.ventana.fin)}</p>` : '<p>Las obligaciones se solapan con la preparación: no hay ventana disponible.</p>'}${item.limiteMinimo ? `<p>Para proteger ${item.minimoHoras} h: dormir antes de aproximadamente ${labelTime(item.limiteMinimo)}.</p>` : '<p>El calendario laboral no permite proteger el mínimo configurado antes de este bloque.</p>'}</div>`).join('')}</section>`;
+    }
     function reset() {
       revision++; request?.abort(); request = null;
       reader = null; opened = false; loadedKey = ''; state = 'empty'; turnos = [];
+      clearRest();
       today();
     }
     async function load() {
       if (!opened || !reader) return;
-      const from = key(1), to = key(monthDays(year, month).count);
+      const contextDate = day => {
+        const value = date(year, month, day);
+        return `${String(value.getFullYear()).padStart(4, '0')}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+      };
+      const margin = window.JarvisDescanso.CONTEXT_DAYS;
+      const from = contextDate(1 - margin), to = contextDate(monthDays(year, month).count + margin);
       if (loadedKey === from && (state === 'loaded' || state === 'loading')) return;
       request?.abort();
       const controller = new AbortController(); request = controller;
       const attempt = ++revision;
-      loadedKey = from; state = 'loading'; turnos = []; render();
+      loadedKey = from; state = 'loading'; turnos = []; clearRest(); render();
       try {
         const data = await reader(from, to, controller.signal);
         if (attempt !== revision || controller.signal.aborted) return;
@@ -42,9 +60,12 @@
           !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(item.horaInicio) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(item.horaFin) ||
           item.tipo.length > 100 || item.estado.length > 50 || item.nota.length > 500)) throw new Error('Invalid response');
         turnos = data.turnos; state = 'loaded';
+        try { descanso = window.JarvisDescanso.calculate(turnos); }
+        catch { descanso = []; descansoError = true; }
       } catch {
         if (attempt !== revision || controller.signal.aborted) return;
         turnos = []; state = 'error';
+        clearRest();
       }
       renderPreservingFocus();
     }
@@ -75,16 +96,19 @@
             const day = i + 1;
             const isToday = year === today.getFullYear() && month === today.getMonth() && day === today.getDate();
             const items = blocks(day);
+            const recommendations = restFor(day);
+            const severity = ['recuperacion_prioritaria', 'reducido', 'ideal'].find(value => recommendations.some(item => item.estado === value));
+            const indicator = severity ? `<span class="rest-indicator" aria-hidden="true">${severity === 'ideal' ? '☾' : severity === 'reducido' ? '☾−' : '☾!'}</span>` : '';
             const compact = items.length ? `<span class="shift-summary" aria-hidden="true">${items[0].horaInicio.replace(':00', '')}–${items[0].horaFin.replace(':00', '')}${items.length > 1 ? `<span>+${items.length - 1}</span>` : ''}</span>` : '';
-            return `<button type="button" data-day="${day}" aria-label="${fullDate.format(date(year, month, day))}${items.length ? `, ${items.length} turnos` : ''}" aria-pressed="${day === selected}"${isToday ? ' aria-current="date"' : ''}>${day}${compact}</button>`;
+            return `<button type="button" data-day="${day}" aria-label="${fullDate.format(date(year, month, day))}${items.length ? `, ${items.length} turnos` : ''}${severity ? `, ${restLabels[severity]}` : ''}" aria-pressed="${day === selected}"${isToday ? ' aria-current="date"' : ''}>${day}${compact}${indicator}</button>`;
           }).join('')}</div>
-        </section><section class="card routine-detail" aria-live="polite" aria-atomic="true"><h2>${fullDate.format(date(year, month, selected))}</h2>${state === 'loading' ? '<p>Cargando turnos...</p>' : state === 'error' ? '<p>No se pudieron cargar los turnos</p>' : blocks(selected).length ? blocks(selected).map(item => `<article class="routine-block shift-block" data-type="work"><h3>${escape(item.tipo)}</h3><p>${item.horaInicio}–${item.horaFin}</p><p class="shift-state${item.estado === 'Tentativo' ? ' tentative' : ''}">${escape(item.estado)}</p>${item.nota ? `<p>${escape(item.nota)}</p>` : ''}</article>`).join('') : '<p class="muted">Sin información registrada</p>'}</section>`;
+        </section><section class="card routine-detail" aria-live="polite" aria-atomic="true"><h2>${fullDate.format(date(year, month, selected))}</h2>${state === 'loading' ? '<p>Cargando turnos...</p>' : state === 'error' ? '<p>No se pudieron cargar los turnos</p>' : blocks(selected).length ? blocks(selected).map(item => `<article class="routine-block shift-block" data-type="work"><h3>${escape(item.tipo)}</h3><p>${item.horaInicio}–${item.horaFin}</p><p class="shift-state${item.estado === 'Tentativo' ? ' tentative' : ''}">${escape(item.estado)}</p>${item.nota ? `<p>${escape(item.nota)}</p>` : ''}</article>`).join('') : '<p class="muted">Sin información registrada</p>'}${restDetail()}</section>`;
     }
     function changeMonth(delta) {
       const next = date(year, month + delta, 1);
       year = next.getFullYear(); month = next.getMonth();
       selected = Math.min(selected, monthDays(year, month).count);
-      turnos = []; state = 'empty';
+      turnos = []; state = 'empty'; clearRest();
       render();
       load();
     }

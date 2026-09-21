@@ -5,6 +5,8 @@
 
 .shift-summary{display:block;font-size:clamp(8px,2.1vw,12px);line-height:1.3;white-space:nowrap;letter-spacing:-.04em}.shift-summary>span{display:block;font-size:10px}.calendar-days button:has(.shift-summary){min-height:64px}.shift-block{padding:0 0 0 14px;margin:20px 0;overflow-wrap:anywhere}.shift-block h3{font-size:16px;margin:0}.shift-block p{margin:8px 0}.shift-state{font-size:12px;font-weight:600}.shift-state.tentative{border-bottom:1px dashed #98a2b3;width:fit-content}
 
+.rest-indicator{display:block;font-size:11px;line-height:1.2;color:#b4aecb}.rest-detail{border-top:1px solid #344054;margin-top:24px;padding-top:16px}.rest-detail p{font-size:13px;line-height:1.6;overflow-wrap:anywhere}.rest-block{padding:8px 0;border-bottom:1px solid #273244}.rest-block h4{font-size:14px;line-height:1.5}
+
 /* PWA controls live outside #app so changing screens preserves their state. */
 [hidden]{display:none!important}
 .pwa-panel{max-width:1180px;margin:0 auto;padding:0 24px 24px;color:#98a2b3;font-size:13px;line-height:1.6;padding-bottom:max(24px,env(safe-area-inset-bottom))}

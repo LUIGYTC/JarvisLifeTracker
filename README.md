@@ -80,10 +80,14 @@ La validación y autorización están implementadas en backend y requieren confi
 Tras iniciar sesión, Jarvis abre Home con Finanzas y Rutinas activos y Casa e
 Inversiones «Próximamente». «Volver a Jarvis» mantiene el dashboard en memoria;
 «Cerrar sesión» descarta el estado y regresa al login. Navegación modular:
-[docs/navigation.md](docs/navigation.md). Caché de esta etapa: 2.3.10.
+[docs/navigation.md](docs/navigation.md). Caché de esta etapa: 2.3.11.
 
 Rutinas consulta `GET /api/turnos` al abrir el calendario y cambiar de mes.
 Contrato, privacidad y semántica del día operativo: [docs/turnos.md](docs/turnos.md).
+
+v0.3.2 deriva ventanas de sueño recomendado y recuperación desde los turnos,
+sin registrar sueño real ni escribir a Sheets. Reglas y límites:
+[docs/descanso.md](docs/descanso.md).
 
 El dashboard autenticado consulta `GET /api/dashboard`, con fuente exclusiva
 `MovimientosDemo`, después de autorizar y confirmar Sheets conectado. Muestra
