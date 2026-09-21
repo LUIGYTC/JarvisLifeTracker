@@ -5,7 +5,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const port = Number(process.env.PORT || 8000);
 // Serve only public PWA assets, never backend files, dependencies or environment.
-const publicFiles = new Set(['index.html', 'app.js', 'dashboard.js', 'auth.js', 'config.js', 'pwa.js',
+const publicFiles = new Set(['index.html', 'app.js', 'dashboard.js', 'navigation.js', 'auth.js', 'config.js', 'pwa.js',
   'sw.js', 'styles.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png']);
 const types = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',

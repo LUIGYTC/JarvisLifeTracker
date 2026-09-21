@@ -77,6 +77,11 @@ La validación y autorización están implementadas en backend y requieren confi
 
 ## Preparación de autenticación
 
+Tras iniciar sesión, Jarvis abre Home con Finanzas activo y Casa, Rutinas e
+Inversiones «Próximamente». «Volver a Jarvis» mantiene el dashboard en memoria;
+«Cerrar sesión» descarta el estado y regresa al login. Navegación modular:
+[docs/navigation.md](docs/navigation.md). Caché de esta etapa: 2.3.8.
+
 El dashboard autenticado consulta `GET /api/dashboard`, con fuente exclusiva
 `MovimientosDemo`, después de autorizar y confirmar Sheets conectado. Muestra
 ingresos, gastos, balance, tres gráficas y 20 movimientos recientes. No escribe ni
