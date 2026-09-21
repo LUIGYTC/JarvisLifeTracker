@@ -80,7 +80,10 @@ La validación y autorización están implementadas en backend y requieren confi
 Tras iniciar sesión, Jarvis abre Home con Finanzas y Rutinas activos y Casa e
 Inversiones «Próximamente». «Volver a Jarvis» mantiene el dashboard en memoria;
 «Cerrar sesión» descarta el estado y regresa al login. Navegación modular:
-[docs/navigation.md](docs/navigation.md). Caché de esta etapa: 2.3.9.
+[docs/navigation.md](docs/navigation.md). Caché de esta etapa: 2.3.10.
+
+Rutinas consulta `GET /api/turnos` al abrir el calendario y cambiar de mes.
+Contrato, privacidad y semántica del día operativo: [docs/turnos.md](docs/turnos.md).
 
 El dashboard autenticado consulta `GET /api/dashboard`, con fuente exclusiva
 `MovimientosDemo`, después de autorizar y confirmar Sheets conectado. Muestra
@@ -93,6 +96,6 @@ en la hoja fija Movimientos, con autorización, validación estricta y texto lit
 RAW. No hay formulario ni conexión de la demo a datos reales. El contrato y la
 contrato con operationId UUID v4 y los riesgos de atomicidad están en [backend/README.md](backend/README.md).
 
-La arquitectura está en [docs/auth-architecture.md](docs/auth-architecture.md). GIS usa el cliente web público autorizado para `http://localhost:8000` y `https://luigytc.github.io`. No se usa Client Secret. El token se envía exclusivamente desde memoria a `/auth/me` del backend configurado con `no-store`, sin cookies ni redirects; nunca se imprime, decodifica ni persiste. La demo pública no es una barrera de seguridad.
+La arquitectura está en [docs/auth-architecture.md](docs/auth-architecture.md). GIS usa el cliente web público autorizado para `http://localhost:8000` y `https://luigytc.github.io`. No se usa Client Secret. El token permanece únicamente en memoria durante la sesión de página y se envía a las APIs privadas del backend configurado con `no-store`, sin cookies ni redirects; nunca se imprime, decodifica ni persiste. La demo pública no es una barrera de seguridad.
 
 Tras instalar dependencias backend, ejecuta todas las pruebas con `node --test backend/test/*.test.js tests/*.test.cjs`. Comprueba sintaxis con `node --check` sobre los archivos JavaScript de frontend/backend. Las pruebas no usan credenciales reales.

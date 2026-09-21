@@ -6,6 +6,52 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../auth.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
+test('turnos reader is authorized only after login, retains token in memory and clears on rejection', async () => {
+  let reader, status = 200;
+  const paths = [];
+  const h = harness({ apiBaseUrl: 'https://api.example.test', onTurnosReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+    const path = new URL(url).pathname; paths.push(path);
+    assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
+    assert.equal(options.credentials, 'omit'); assert.equal(options.cache, 'no-store');
+    assert.equal(options.redirect, 'error');
+    return { status: path === '/api/turnos' ? status : 200, json: async () => path === '/auth/me'
+      ? { authenticated: true, authorized: true } : path === '/api/sheets/status' ? { connected: true } : { turnos: [] } };
+  } });
+  const ui = h.mount(); await settle(); assert.equal(reader, undefined);
+  h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+  assert.deepEqual(paths, ['/auth/me', '/api/sheets/status']);
+  assert.deepEqual(await reader('2032-01-01', '2032-01-31'), { turnos: [] });
+  status = 401;
+  await assert.rejects(reader('2032-01-01', '2032-01-31'));
+  const count = paths.length;
+  await assert.rejects(reader('2032-01-01', '2032-01-31'));
+  assert.equal(paths.length, count); assert.match(ui.status.textContent, /Vuelve a iniciar/);
+  assert.equal(ui.button.hidden, false);
+});
+
+test('turnos pending reads abort on discard, demo, offline, pagehide and timeout without retry', async () => {
+  for (const action of ['discard', 'demo', 'offline', 'pagehide', 'timeout']) {
+    let reader, signal, requests = 0;
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onTurnosReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+      if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+      requests++; signal = options.signal;
+      return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+    } });
+    const ui = h.mount(); await settle(); h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    const pending = assert.rejects(reader('2032-01-01', '2032-01-31'));
+    if (action === 'discard') ui.clear.onclick();
+    if (action === 'demo') ui.dispose();
+    if (action === 'offline') h.events.offline();
+    if (action === 'pagehide') h.events.pagehide();
+    if (action === 'timeout') [...h.timers.values()][0]();
+    await pending; assert.equal(signal.aborted, true); assert.equal(requests, 1);
+    if (action !== 'timeout') await assert.rejects(reader('2032-01-01', '2032-01-31'));
+    assert.equal(requests, 1);
+  }
+});
+
 test('temporary write UI and fixed payload are absent from frontend assets', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
   for (const text of [source, appSource]) {
@@ -13,7 +59,7 @@ test('temporary write UI and fixed payload are absent from frontend assets', () 
   }
 });
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard } = {}) {
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
@@ -46,7 +92,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   function mount() {
     const elements = Object.fromEntries(['button', 'status', 'retry', 'clear'].map(key =>
       [key, { hidden: false, textContent: '', clientWidth: 260, replaceChildren() {} }]));
-    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard });
+    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader });
     return { ...elements, dispose };
   }
   return { window, navigator, events, scripts, timers, calls, id, mount };

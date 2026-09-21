@@ -44,7 +44,7 @@ test('static shell remains available offline under the Pages base, including ent
 
 test('API, other origins, unknown routes and mutations bypass the static cache', () => {
   const { dispatch, hits } = worker();
-  for (const url of [base + 'api/balance', base + 'api/dashboard', base + 'auth/me', base + 'unknown',
+  for (const url of [base + 'api/turnos?from=2032-01-01&to=2032-01-31', base + 'api/balance', base + 'api/dashboard', base + 'auth/me', base + 'unknown',
     'https://api.example.test/auth/me', 'https://accounts.google.com/gsi/client',
     'https://accounts.google.com/gsi/client?hl=es',
     'https://luigytc.github.io/another-project/']) {

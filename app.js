@@ -22,6 +22,7 @@ function login() {
     status: document.querySelector('#auth-status'),
     retry: document.querySelector('#retry-google'),
     clear: document.querySelector('#clear-identity'),
+    onTurnosReader: reader => navigation.setTurnosReader(reader),
     onDashboard: (state, data) => {
       navigation.update(state, data);
       loginScreen.hidden = state !== 'reset';

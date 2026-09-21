@@ -33,6 +33,7 @@
       home.hidden = view !== 'home';
       finance.hidden = view !== 'finanzas';
       routines.hidden = view !== 'rutinas';
+      if (view === 'rutinas') calendar.open();
       window.scrollTo(0, 0);
       (view === 'home' ? home : view === 'rutinas' ? routineContent : content).focus({ preventScroll: true });
     }
@@ -42,6 +43,7 @@
     root.querySelector('#back-home').onclick = () => show('home');
     root.querySelector('#close-session').onclick = onExit;
     return Object.freeze({
+      setTurnosReader(reader) { calendar.setReader(reader); },
       update(state, data) {
         window.JarvisDashboard.render(content, state, data);
         if (state === 'reset') {

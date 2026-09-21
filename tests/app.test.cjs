@@ -11,7 +11,7 @@ test('authorized login enters Home, Finance and back preserve identity, logout d
     return elements.get(selector);
   };
   let options, disposed = 0, mounts = 0;
-  const window = { scrollTo() {}, JarvisRutinas: { mount() { return { reset() {} }; } }, JarvisDashboard: { render(root, state) { root.innerHTML = state === 'reset' ? '' : state; } },
+  const window = { scrollTo() {}, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(root, state) { root.innerHTML = state === 'reset' ? '' : state; } },
     JarvisAuth: { mount(input) { mounts++; options = input; return () => { disposed++; input.onDashboard('reset'); }; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8'), {
@@ -62,7 +62,7 @@ test('future modules are disabled and completion or error stays in the selected 
     return nodes.get(key);
   };
   const root = { hidden: true, innerHTML: '', querySelector: get };
-  const window = { scrollTo() {}, JarvisRutinas: { mount() { return { reset() {} }; } }, JarvisDashboard: { render(content, state) { content.innerHTML = state === 'reset' ? '' : state; } } };
+  const window = { scrollTo() {}, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(content, state) { content.innerHTML = state === 'reset' ? '' : state; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
   const navigation = window.JarvisNavigation.mount(root, () => {});
   for (const id of ['casa', 'inversiones']) {

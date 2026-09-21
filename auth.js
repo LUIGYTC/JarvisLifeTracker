@@ -8,8 +8,13 @@
   let accepting = false;
   let request = null;
   let generation = 0;
+  let authorized = false;
+  const reads = new Set();
 
   function clearCredential() {
+    authorized = false;
+    for (const controller of reads) controller.abort();
+    reads.clear();
     view?.onDashboard?.('reset');
     credential = null;
     accepting = false;
@@ -96,6 +101,38 @@
             throw new Error('Unexpected Sheets response');
           }
           current.status.textContent = `${authorizedMessage} Google Sheets conectado.`;
+          authorized = true;
+          current.onTurnosReader?.(async (from, to, signal) => {
+            if (!authorized || !credential || attempt !== generation || view !== current) throw new Error('Unavailable');
+            const read = new AbortController();
+            const abort = () => read.abort();
+            signal?.addEventListener('abort', abort, { once: true });
+            if (signal?.aborted) read.abort();
+            reads.add(read);
+            const deadline = setTimeout(abort, 12000);
+            try {
+              const url = new URL('/api/turnos', authEndpoint());
+              url.searchParams.set('from', from);
+              url.searchParams.set('to', to);
+              const response = await fetch(url.href, { method: 'GET',
+                headers: { Authorization: `Bearer ${credential}` }, credentials: 'omit',
+                cache: 'no-store', redirect: 'error', signal: read.signal });
+              if (attempt !== generation || view !== current || read.signal.aborted) throw new Error('Unavailable');
+              if (response.status === 401 || response.status === 403) {
+                clearCredential();
+                current.button.hidden = !navigator.onLine;
+                current.status.textContent = 'Vuelve a iniciar sesión con Google.';
+              }
+              if (response.status !== 200) throw new Error('Unavailable');
+              const data = await response.json();
+              if (attempt !== generation || view !== current || read.signal.aborted) throw new Error('Unavailable');
+              return data;
+            } finally {
+              clearTimeout(deadline);
+              signal?.removeEventListener('abort', abort);
+              reads.delete(read);
+            }
+          });
           if (current.onDashboard) {
             current.onDashboard('loading');
             clearTimeout(timer);
@@ -128,7 +165,7 @@
     } finally {
       clearTimeout(timer);
       if (attempt === generation) {
-        credential = null;
+        if (!authorized) credential = null;
         request = null;
         current.button.hidden = !navigator.onLine;
       }
@@ -208,9 +245,9 @@
     }
   }
 
-  function mount({ button, status, retry, clear, onDashboard }) {
+  function mount({ button, status, retry, clear, onDashboard, onTurnosReader }) {
     clearCredential();
-    const current = { button, status, retry, clear, onDashboard };
+    const current = { button, status, retry, clear, onDashboard, onTurnosReader };
     view = current;
     clear.hidden = true;
     retry.onclick = () => prepare(current);

@@ -14,14 +14,54 @@
   // Future days may contain an array of blocks, including multiple work blocks.
   // These are visual categories only, not a scheduling or persistence model.
   const types = Object.freeze({ work: 'Trabajo', training: 'Entrenamiento', recovery: 'Sueño/recuperación', personal: 'Evento personal' });
+  const escape = value => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   function mount(root, now = () => new Date()) {
     let selected, year, month;
+    let reader = null, opened = false, request = null, revision = 0, loadedKey = '', state = 'empty', turnos = [];
+    const key = day => `${String(year).padStart(4, '0')}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const blocks = day => turnos.filter(item => item.fechaTurno === key(day));
+    function reset() {
+      revision++; request?.abort(); request = null;
+      reader = null; opened = false; loadedKey = ''; state = 'empty'; turnos = [];
+      today();
+    }
+    async function load() {
+      if (!opened || !reader) return;
+      const from = key(1), to = key(monthDays(year, month).count);
+      if (loadedKey === from && (state === 'loaded' || state === 'loading')) return;
+      request?.abort();
+      const controller = new AbortController(); request = controller;
+      const attempt = ++revision;
+      loadedKey = from; state = 'loading'; turnos = []; render();
+      try {
+        const data = await reader(from, to, controller.signal);
+        if (attempt !== revision || controller.signal.aborted) return;
+        if (!data || !Array.isArray(data.turnos) || data.turnos.length > 10000 || data.turnos.some(item =>
+          !item || !['fechaTurno', 'horaInicio', 'horaFin', 'tipo', 'estado', 'nota', 'inicioReal', 'finReal'].every(field => typeof item[field] === 'string') ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(item.fechaTurno) || item.fechaTurno < from || item.fechaTurno > to ||
+          !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(item.horaInicio) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(item.horaFin) ||
+          item.tipo.length > 100 || item.estado.length > 50 || item.nota.length > 500)) throw new Error('Invalid response');
+        turnos = data.turnos; state = 'loaded';
+      } catch {
+        if (attempt !== revision || controller.signal.aborted) return;
+        turnos = []; state = 'error';
+      }
+      renderPreservingFocus();
+    }
+    function renderPreservingFocus() {
+      const focused = root.querySelector(':focus');
+      const selector = focused?.dataset?.day ? `[data-day="${focused.dataset.day}"]`
+        : focused?.dataset?.action ? `[data-action="${focused.dataset.action}"]` : null;
+      render();
+      if (selector) root.querySelector(selector)?.focus({ preventScroll: true });
+    }
     const fullDate = new Intl.DateTimeFormat('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     const monthLabel = new Intl.DateTimeFormat('es', { month: 'long', year: 'numeric' });
-    function reset() {
+    function today() {
       const today = now();
       year = today.getFullYear(); month = today.getMonth(); selected = today.getDate();
       render();
+      if (opened) load();
     }
     function render() {
       const today = now();
@@ -34,15 +74,19 @@
           <div class="calendar-days">${'<span aria-hidden="true"></span>'.repeat(offset)}${Array.from({ length: count }, (_, i) => {
             const day = i + 1;
             const isToday = year === today.getFullYear() && month === today.getMonth() && day === today.getDate();
-            return `<button type="button" data-day="${day}" aria-label="${fullDate.format(date(year, month, day))}" aria-pressed="${day === selected}"${isToday ? ' aria-current="date"' : ''}>${day}</button>`;
+            const items = blocks(day);
+            const compact = items.length ? `<span class="shift-summary" aria-hidden="true">${items[0].horaInicio.replace(':00', '')}–${items[0].horaFin.replace(':00', '')}${items.length > 1 ? `<span>+${items.length - 1}</span>` : ''}</span>` : '';
+            return `<button type="button" data-day="${day}" aria-label="${fullDate.format(date(year, month, day))}${items.length ? `, ${items.length} turnos` : ''}" aria-pressed="${day === selected}"${isToday ? ' aria-current="date"' : ''}>${day}${compact}</button>`;
           }).join('')}</div>
-        </section><section class="card routine-detail" aria-live="polite" aria-atomic="true"><h2>${fullDate.format(date(year, month, selected))}</h2><p class="muted">Sin información registrada</p><p class="routine-future">Más adelante: turnos, sueño, entrenamiento y eventos.</p></section>`;
+        </section><section class="card routine-detail" aria-live="polite" aria-atomic="true"><h2>${fullDate.format(date(year, month, selected))}</h2>${state === 'loading' ? '<p>Cargando turnos...</p>' : state === 'error' ? '<p>No se pudieron cargar los turnos</p>' : blocks(selected).length ? blocks(selected).map(item => `<article class="routine-block shift-block" data-type="work"><h3>${escape(item.tipo)}</h3><p>${item.horaInicio}–${item.horaFin}</p><p class="shift-state${item.estado === 'Tentativo' ? ' tentative' : ''}">${escape(item.estado)}</p>${item.nota ? `<p>${escape(item.nota)}</p>` : ''}</article>`).join('') : '<p class="muted">Sin información registrada</p>'}</section>`;
     }
     function changeMonth(delta) {
       const next = date(year, month + delta, 1);
       year = next.getFullYear(); month = next.getMonth();
       selected = Math.min(selected, monthDays(year, month).count);
+      turnos = []; state = 'empty';
       render();
+      load();
     }
     root.onclick = event => {
       const button = event.target.closest('button');
@@ -50,13 +94,13 @@
       const action = button.dataset.action;
       if (action === 'previous') changeMonth(-1);
       else if (action === 'next') changeMonth(1);
-      else if (action === 'today') reset();
+      else if (action === 'today') today();
       else if (button.dataset.day) { selected = Number(button.dataset.day); render(); }
       // Replacing calendar markup must not lose keyboard focus.
       root.querySelector(action ? `[data-action="${action}"]` : `[data-day="${selected}"]`)?.focus({ preventScroll: true });
     };
     reset();
-    return Object.freeze({ reset });
+    return Object.freeze({ reset, setReader(value) { reader = value; }, open() { opened = true; load(); } });
   }
   window.JarvisRutinas = Object.freeze({ mount, monthDays, types });
 })();
