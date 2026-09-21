@@ -11,7 +11,7 @@ test('authorized login enters Home, Finance and back preserve identity, logout d
     return elements.get(selector);
   };
   let options, disposed = 0, mounts = 0;
-  const window = { scrollTo() {}, JarvisDashboard: { render(root, state) { root.innerHTML = state === 'reset' ? '' : state; } },
+  const window = { scrollTo() {}, JarvisRutinas: { mount() { return { reset() {} }; } }, JarvisDashboard: { render(root, state) { root.innerHTML = state === 'reset' ? '' : state; } },
     JarvisAuth: { mount(input) { mounts++; options = input; return () => { disposed++; input.onDashboard('reset'); }; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8'), {
@@ -32,6 +32,14 @@ test('authorized login enters Home, Finance and back preserve identity, logout d
   element('#back-home').onclick();
   assert.equal(element('#jarvis-home').hidden, false);
   assert.equal(element('#finance-view').hidden, true);
+  element('#module-rutinas').onclick();
+  assert.equal(element('#rutinas-view').hidden, false);
+  assert.equal(element('#finance-view').hidden, true);
+  options.onDashboard('loaded', {});
+  assert.equal(element('#rutinas-view').hidden, false);
+  element('#rutinas-back').onclick();
+  assert.equal(element('#jarvis-home').hidden, false);
+  assert.equal(element('#rutinas-view').hidden, true);
   assert.equal(disposed, 0);
   assert.equal(mounts, 1);
   element('#module-finanzas').onclick();
@@ -54,14 +62,14 @@ test('future modules are disabled and completion or error stays in the selected 
     return nodes.get(key);
   };
   const root = { hidden: true, innerHTML: '', querySelector: get };
-  const window = { scrollTo() {}, JarvisDashboard: { render(content, state) { content.innerHTML = state === 'reset' ? '' : state; } } };
+  const window = { scrollTo() {}, JarvisRutinas: { mount() { return { reset() {} }; } }, JarvisDashboard: { render(content, state) { content.innerHTML = state === 'reset' ? '' : state; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
   const navigation = window.JarvisNavigation.mount(root, () => {});
-  for (const id of ['casa', 'rutinas', 'inversiones']) {
+  for (const id of ['casa', 'inversiones']) {
     assert.match(root.innerHTML, new RegExp(`id="module-${id}" disabled`));
     assert.equal(get(`#module-${id}`).onclick, undefined);
   }
-  assert.equal((root.innerHTML.match(/Próximamente/g) || []).length, 3);
+  assert.equal((root.innerHTML.match(/Próximamente/g) || []).length, 2);
   get('#module-finanzas').onclick();
   assert.equal(root.hidden, true);
   navigation.update('loading');

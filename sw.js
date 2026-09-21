@@ -1,10 +1,10 @@
 ﻿// Increment VERSION whenever a precached file changes; deploy all files together.
-const VERSION = '2.3.8';
+const VERSION = '2.3.9';
 const BASE = new URL('./', self.location.href);
 const PREFIX = `jarvislifetracker:${BASE.pathname}:`;
 const CACHE = `${PREFIX}${VERSION}`;
 const ASSETS = [
-  './', './index.html', './styles.css', './app.js', './dashboard.js', './navigation.js', './config.js', './auth.js', './pwa.js',
+  './', './index.html', './styles.css', './app.js', './dashboard.js', './navigation.js', './rutinas.js', './config.js', './auth.js', './pwa.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'
 ].map(path => new URL(path, BASE).href);
 
