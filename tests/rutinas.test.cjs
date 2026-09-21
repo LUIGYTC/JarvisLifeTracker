@@ -105,9 +105,25 @@ test('rest uses previous month context, stays secondary and is cleared on reset'
   ] }));
   calendar.open(); await settle(); click({ day: '1' });
   assert.match(root.innerHTML, /Recuperación prioritaria/);
-  assert.match(root.innerHTML, /23:00 \(31\/12\/2023\)/);
-  assert.match(root.innerHTML, /no son sueño registrado/);
+  assert.match(root.innerHTML, /Prioriza descanso/);
+  const detail = root.innerHTML.split('<section class="rest-detail">')[1];
+  assert.doesNotMatch(detail, /Ventana|Mínimo|proteger|objetivo|31\/12\/2023|Hora ideal/);
   assert.doesNotMatch(root.innerHTML, /Dormiste/);
   click({ day: '2' }); assert.match(root.innerHTML, /Sin horario laboral que condicione el descanso/);
-  calendar.reset(); assert.doesNotMatch(root.innerHTML, /rest-indicator|Sueño recomendado/);
+  calendar.reset(); assert.doesNotMatch(root.innerHTML, /rest-indicator|rest-detail/);
+});
+
+test('normal sleep detail shows only dynamic bedtime and wake without calculation explanations', async () => {
+  for (const [start, wake, bedtime] of [['08:00', '06:00', '22:00'], ['07:00', '05:00', '21:00']]) {
+    const { calendar, root, click } = setup();
+    calendar.setReader(async () => ({ turnos: [shift({ horaInicio: start, horaFin: '16:00',
+      inicioReal: `2024-01-22T${start}:00`, finReal: '2024-01-22T16:00:00' })] }));
+    calendar.open(); await settle(); click({ day: '22' });
+    const detail = root.innerHTML.split('<section class="rest-detail">')[1];
+    assert.ok(detail.startsWith('<h3>Sueño</h3>'));
+    assert.ok(detail.includes(`<p>Hora ideal de dormir: ${bedtime}</p>`));
+    assert.ok(detail.includes(`<p>Despertar: ${wake}</p>`));
+    assert.equal((detail.match(/<p>/g) || []).length, 2);
+    assert.doesNotMatch(detail, /Ventana|Mínimo|proteger|calculados|2024|Prioriza/);
+  }
 });

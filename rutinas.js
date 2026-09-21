@@ -29,8 +29,8 @@
       if (descansoError) return '<p>No se pudo calcular el descanso.</p>';
       const items = restFor(selected);
       if (!items.length) return '<p class="muted">Sin horario laboral que condicione el descanso.</p>';
-      const labelTime = timestamp => `${timestamp.slice(11, 16)} (${timestamp.slice(8, 10)}/${timestamp.slice(5, 7)}/${timestamp.slice(0, 4)})`;
-      return `<section class="rest-detail"><h3>Sueño recomendado</h3><p class="muted">Objetivos calculados según los turnos disponibles; no son sueño registrado.</p>${items.map(item => `<div class="rest-block"><h4>Antes del trabajo del ${labelTime(item.inicioTrabajo)}</h4><p>${restLabels[item.estado]}</p><p>Despertar objetivo: ${labelTime(item.despertar)}</p><p>Objetivo ideal: ${item.objetivoHoras} h · Mínimo práctico: ${item.minimoHoras} h</p>${item.ventana ? `<p>${item.estado === 'ideal' ? 'Ventana ideal' : 'Espacio disponible'}: ${labelTime(item.ventana.inicio)} → ${labelTime(item.ventana.fin)}</p>` : '<p>Las obligaciones se solapan con la preparación: no hay ventana disponible.</p>'}${item.limiteMinimo ? `<p>Para proteger ${item.minimoHoras} h: dormir antes de aproximadamente ${labelTime(item.limiteMinimo)}.</p>` : '<p>El calendario laboral no permite proteger el mínimo configurado antes de este bloque.</p>'}</div>`).join('')}</section>`;
+      const labelTime = timestamp => timestamp.slice(11, 16);
+      return `<section class="rest-detail"><h3>Sueño</h3>${items.map(item => `<div class="rest-block">${items.length > 1 ? `<h4>Trabajo: ${labelTime(item.inicioTrabajo)}</h4>` : ''}${item.estado === 'recuperacion_prioritaria' ? '<p>Prioriza descanso</p>' : `<p>Hora ideal de dormir: ${labelTime(item.ventana.inicio)}</p><p>Despertar: ${labelTime(item.despertar)}</p>`}</div>`).join('')}</section>`;
     }
     function reset() {
       revision++; request?.abort(); request = null;
