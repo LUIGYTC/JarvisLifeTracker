@@ -64,7 +64,7 @@ export function aggregateDashboard(values = []) {
 }
 
 export function createDashboardReader({ auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] }),
-  fetchImpl = fetch, timeoutMs = 8000 } = {}) {
+  fetchImpl = fetch, timeoutMs = 8000, aggregate = aggregateDashboard } = {}) {
   return async () => {
     const controller = new AbortController();
     let timer;
@@ -78,7 +78,7 @@ export function createDashboardReader({ auth = new GoogleAuth({ scopes: ['https:
         const response = await fetchImpl(url, { method: 'GET', headers, signal: controller.signal, cache: 'no-store', redirect: 'error' });
         if (response.status !== 200) invalid();
         const data = await response.json();
-        return aggregateDashboard(data.values);
+        return aggregate(data.values);
       })(), new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, timeoutMs); })]);
     } catch { throw new Error('Dashboard unavailable'); }
     finally { clearTimeout(timer); }

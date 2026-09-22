@@ -92,3 +92,74 @@ test('credit frontend has no embedded card fixtures or persistence and is wired 
   assert.doesNotMatch(source, /BBVA|Rappi|Mercado Pago|Liverpool|Sintética|2032-01-25|localStorage|sessionStorage|indexedDB|document\.cookie|caches\./i);
   assert.match(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8'), /src="\.\/tarjetas-credito\.js"/);
 });
+
+function action(root, selector, index, key) {
+  const target = { closest: value => value === selector ? { dataset: { creditCard: String(index) } } : null };
+  if (key) root.onkeydown({ target, key, preventDefault() {} });
+  else root.onclick({ target });
+}
+const movement = { fecha: '2032-01-20', descripcion: 'Compra sintética', categoria: 'Prueba', monto: 12.34, tipo: 'Gasto' };
+
+test('click and keyboard open the selected card with current balance, recorded fields and its movements', async () => {
+  const { root, view } = setup(); const calls = [];
+  view.setReader(async () => ({ tarjetas: [card(), card({ tarjeta: 'Sintética B', utilizado: 250, disponible: 750,
+    porcentajeUtilizacion: 25, domiciliadaA: 'Cuenta sintética', ultimaActualizacion: '2032-01-22' })] }));
+  view.setMovementsReader(async name => { calls.push(name); return { tarjeta: name, movimientos: [movement] }; });
+  await view.open();
+  action(root, '[data-credit-card]', 1); await settle();
+  for (const label of ['Sintética B', 'Saldo actual', '$250.00', '$750.00', '$1,000.00', '25% de utilización', 'Día de corte', 'Fecha límite de pago', 'Cuenta sintética', 'Última actualización', '22 ene 2032', 'Compra sintética', '$12.34', 'Gasto']) assert.ok(root.innerHTML.includes(label), label);
+  assert.doesNotMatch(root.innerHTML, /Sintética A|Pago del corte|Próximo pago|Pago estimado|Pago para no generar intereses|Número de tarjeta/);
+  assert.deepEqual(calls, ['Sintética B']);
+  action(root, '[data-credit-back]'); action(root, '[data-credit-card]', 0, 'Enter'); await settle();
+  assert.deepEqual(calls, ['Sintética B', 'Sintética A']);
+});
+
+test('return restores the unchanged overview without refetch or login; missing fields and movements stay empty', async () => {
+  const { root, view } = setup(); let reads = 0;
+  view.setReader(async () => { reads++; return { tarjetas: [card({ fechaLimitePago: null, diaCorte: null })] }; });
+  view.setMovementsReader(async tarjeta => ({ tarjeta, movimientos: [] })); await view.open();
+  const overview = root.innerHTML;
+  action(root, '[data-credit-card]', 0, ' '); await settle();
+  assert.match(root.innerHTML, /Aún no hay movimientos registrados con esta tarjeta/);
+  assert.match(root.innerHTML, /Última actualización/); assert.match(root.innerHTML, /Sin registrar/);
+  assert.doesNotMatch(root.innerHTML, /Fecha límite de pago|Domiciliada a/);
+  action(root, '[data-credit-back]'); assert.equal(root.innerHTML, overview); assert.equal(reads, 1);
+});
+
+test('detail escapes fields, omits sensitive extras and rejects mismatched card responses', async () => {
+  const { root, view } = setup();
+  view.setReader(async () => ({ tarjetas: [card({ tipo: '<img>', domiciliadaA: '<script>', numero: 'secret-number' })] }));
+  view.setMovementsReader(async tarjeta => ({ tarjeta, movimientos: [{ ...movement, descripcion: '<img>', categoria: '<script>', origen: 'secret-origin', textoOriginal: 'secret-original' }] }));
+  await view.open(); action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /&lt;img&gt;/); assert.match(root.innerHTML, /&lt;script&gt;/);
+  assert.doesNotMatch(root.innerHTML, /<img>|<script>|secret-/);
+  action(root, '[data-credit-back]');
+  view.setMovementsReader(async () => ({ tarjeta: 'Otra tarjeta', movimientos: [movement] }));
+  action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /No se pudieron cargar los movimientos/); assert.doesNotMatch(root.innerHTML, /Compra sintética/);
+});
+
+test('back, switching cards and reset abort detail reads and ignore late responses', async () => {
+  const { root, view } = setup(); const pending = [];
+  view.setReader(async () => ({ tarjetas: [card(), card({ tarjeta: 'Sintética B' })] }));
+  view.setMovementsReader((tarjeta, signal) => new Promise(resolve => pending.push({ tarjeta, signal, resolve })));
+  await view.open(); action(root, '[data-credit-card]', 0);
+  action(root, '[data-credit-back]'); assert.equal(pending[0].signal.aborted, true);
+  action(root, '[data-credit-card]', 1);
+  pending[0].resolve({ tarjeta: pending[0].tarjeta, movimientos: [movement] }); await settle();
+  assert.match(root.innerHTML, /Sintética B/); assert.doesNotMatch(root.innerHTML, /Compra sintética/);
+  view.reset(); assert.equal(pending[1].signal.aborted, true);
+  pending[1].resolve({ tarjeta: pending[1].tarjeta, movimientos: [movement] }); await settle();
+  assert.equal(root.innerHTML, '');
+});
+
+test('movement failures leave card information visible and retry does not reload the overview', async () => {
+  const { root, view } = setup(); let fail = true, reads = 0;
+  view.setReader(async () => { reads++; return { tarjetas: [card()] }; });
+  view.setMovementsReader(async tarjeta => { if (fail) throw Error('private-failure'); return { tarjeta, movimientos: [movement] }; });
+  await view.open(); action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /Saldo actual/); assert.match(root.innerHTML, /No se pudieron cargar los movimientos/);
+  assert.doesNotMatch(root.innerHTML, /private-failure/);
+  fail = false; action(root, '[data-credit-movements-retry]'); await settle();
+  assert.match(root.innerHTML, /Compra sintética/); assert.equal(reads, 1);
+});

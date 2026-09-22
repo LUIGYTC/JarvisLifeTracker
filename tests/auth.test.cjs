@@ -79,6 +79,49 @@ test('late credit responses or JSON cannot return private data after logout', as
   }
 });
 
+test('card movement reader encodes exact selection and shares authorized no-store lifecycle', async () => {
+  let reader, responseStatus = 200;
+  const requests = [];
+  const h = harness({ apiBaseUrl: 'https://api.example.test', onTarjetaMovimientosReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+    if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+    if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+    requests.push(url);
+    assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
+    assert.equal(options.credentials, 'omit'); assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error');
+    assert.equal(new URL(url).pathname, '/api/tarjetas-credito/movimientos');
+    assert.equal(new URL(url).searchParams.get('tarjeta'), 'Sintética + & Crédito');
+    return { status: responseStatus, json: async () => ({ tarjeta: 'Sintética + & Crédito', movimientos: [] }) };
+  } });
+  h.mount(); await settle(); assert.equal(reader, undefined);
+  h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+  assert.equal(requests.length, 0);
+  await reader('Sintética + & Crédito'); responseStatus = 401;
+  await assert.rejects(reader('Sintética + & Crédito'));
+  await assert.rejects(reader('Sintética + & Crédito')); assert.equal(requests.length, 2);
+});
+
+test('card movement reads are aborted and late JSON rejected on session exit or caller cancellation', async () => {
+  for (const action of ['discard', 'dispose', 'offline', 'pagehide', 'caller', 'timeout']) {
+    let reader, signal, resolveLate;
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onTarjetaMovimientosReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+      if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+      signal = options.signal;
+      return { status: 200, json: () => new Promise(resolve => { resolveLate = resolve; }) };
+    } });
+    const ui = h.mount(); await settle(); h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    const controller = new AbortController();
+    const pending = assert.rejects(reader('Synthetic', controller.signal)); await settle();
+    if (action === 'discard') ui.clear.onclick();
+    if (action === 'dispose') ui.dispose();
+    if (action === 'offline') h.events.offline();
+    if (action === 'pagehide') h.events.pagehide();
+    if (action === 'caller') controller.abort();
+    if (action === 'timeout') [...h.timers.values()][0]();
+    assert.equal(signal.aborted, true); resolveLate({ tarjeta: 'Synthetic', movimientos: [] }); await pending;
+  }
+});
+
 test('turnos reader is authorized only after login, retains token in memory and clears on rejection', async () => {
   let reader, status = 200;
   const paths = [];
@@ -132,7 +175,7 @@ test('temporary write UI and fixed payload are absent from frontend assets', () 
   }
 });
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader } = {}) {
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
@@ -152,7 +195,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   };
   Object.defineProperty(document, 'cookie', { get: forbidden, set: forbidden });
   vm.runInNewContext(source, {
-    window, navigator, document, URL, AbortController,
+    window, navigator, document, URL, URLSearchParams, AbortController,
     setTimeout(fn) { const key = {}; timers.set(key, fn); return key; },
     clearTimeout: key => timers.delete(key),
     localStorage: new Proxy({}, { get: forbidden }),
@@ -165,7 +208,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   function mount() {
     const elements = Object.fromEntries(['button', 'status', 'retry', 'clear'].map(key =>
       [key, { hidden: false, textContent: '', clientWidth: 260, replaceChildren() {} }]));
-    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader });
+    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader });
     return { ...elements, dispose };
   }
   return { window, navigator, events, scripts, timers, calls, id, mount };

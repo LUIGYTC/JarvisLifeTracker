@@ -62,6 +62,7 @@
     return Object.freeze({
       setTurnosReader(reader) { calendar.setReader(reader); },
       setTarjetasReader(reader) { credit.setReader(reader); },
+      setTarjetaMovimientosReader(reader) { credit.setMovementsReader(reader); },
       update(state, data) {
         window.JarvisDashboard.render(content, state, data);
         if (state === 'reset') {

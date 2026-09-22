@@ -24,6 +24,7 @@ function login() {
     clear: document.querySelector('#clear-identity'),
     onTurnosReader: reader => navigation.setTurnosReader(reader),
     onTarjetasReader: reader => navigation.setTarjetasReader(reader),
+    onTarjetaMovimientosReader: reader => navigation.setTarjetaMovimientosReader(reader),
     onDashboard: (state, data) => {
       navigation.update(state, data);
       loginScreen.hidden = state !== 'reset';

@@ -29,8 +29,25 @@ Una hoja sin datos o sin filas válidas devuelve una lista vacía.
 La sección se carga al abrir «Tarjetas de crédito» en Finanzas. La dona representa
 solo saldos utilizados; los límites no determinan los segmentos. La leyenda incluye
 importe y participación de cada tarjeta. Sin deuda, se muestra una dona neutra.
-Las cards tienen estados hover, foco y tap, pero no navegan ni ejecutan acciones.
-No se incluyen detalle, cortes históricos, próximo corte, MSI, pagos ni edición.
+Las cards abren el detalle de la tarjeta mediante clic, tap, Enter o espacio.
+El detalle usa los datos ya cargados y llama «Saldo actual» al campo `utilizado`.
+Muestra tipo, utilización, disponible, límite, corte, fechas y domiciliación registrada.
+Volver a «Tarjetas de crédito» restaura la vista general en memoria sin otra lectura
+ni autenticación. No se incluyen cortes históricos, próximo pago, saldo al corte,
+MSI, pagos ni edición.
+
+`GET /api/tarjetas-credito/movimientos?tarjeta=...` acepta exactamente un nombre de
+tarjeta, con máximo 100 caracteres. Después de autenticar y autorizar, valida el
+nombre contra `TarjetasCredito!A:J`. Una selección inexistente devuelve 404;
+parámetros adicionales, duplicados o vacíos devuelven 400. No admite rangos del cliente.
+Lee exclusivamente `Movimientos!A:G` con ADC y la validación existente del dashboard.
+Filtra por coincidencia exacta de `Método` antes de ordenar por fecha/hora descendente
+y limitar a 10. No usa la lista global de 20 movimientos recientes del dashboard.
+Devuelve `{ tarjeta, movimientos }`, con fecha, descripción, categoría, monto y tipo
+en cada movimiento; no devuelve Origen, Texto original ni otras columnas.
+Errores de lectura devuelven un error genérico 503. El detalle conserva los datos de
+la tarjeta y permite reintentar la lectura de movimientos. Volver, seleccionar otra
+tarjeta o cerrar sesión aborta la lectura e invalida las respuestas tardías.
 
 Tarjetas y token permanecen únicamente en memoria. Cerrar sesión, descartar identidad,
 salir o perder conexión aborta las lecturas, invalida respuestas tardías y limpia la

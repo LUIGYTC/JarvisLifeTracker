@@ -102,7 +102,7 @@
           }
           current.status.textContent = `${authorizedMessage} Google Sheets conectado.`;
           authorized = true;
-          current.onTarjetasReader?.(async signal => {
+          const readCredit = async (path, signal) => {
             if (!authorized || !credential || attempt !== generation || view !== current) throw new Error('Unavailable');
             const read = new AbortController();
             const abort = () => read.abort();
@@ -112,7 +112,7 @@
             const deadline = setTimeout(abort, 12000);
             try {
               read.signal.throwIfAborted();
-              const response = await fetch(new URL('/api/tarjetas-credito', authEndpoint()).href, {
+              const response = await fetch(new URL(path, authEndpoint()).href, {
                 method: 'GET', headers: { Authorization: `Bearer ${credential}` },
                 credentials: 'omit', cache: 'no-store', redirect: 'error', signal: read.signal });
               if (attempt !== generation || view !== current || read.signal.aborted) throw new Error('Unavailable');
@@ -130,7 +130,10 @@
               signal?.removeEventListener('abort', abort);
               reads.delete(read);
             }
-          });
+          };
+          current.onTarjetasReader?.(signal => readCredit('/api/tarjetas-credito', signal));
+          current.onTarjetaMovimientosReader?.((tarjeta, signal) => readCredit(
+            `/api/tarjetas-credito/movimientos?${new URLSearchParams({ tarjeta })}`, signal));
           current.onTurnosReader?.(async (from, to, signal) => {
             if (!authorized || !credential || attempt !== generation || view !== current) throw new Error('Unavailable');
             const read = new AbortController();
@@ -274,9 +277,9 @@
     }
   }
 
-  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader }) {
+  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader }) {
     clearCredential();
-    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader };
+    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader };
     view = current;
     clear.hidden = true;
     retry.onclick = () => prepare(current);
