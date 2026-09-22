@@ -131,6 +131,7 @@
               reads.delete(read);
             }
           };
+          current.onCardExpensesReader?.(signal => readCredit('/api/gastos-tarjetas', signal));
           current.onTarjetasReader?.(signal => readCredit('/api/tarjetas-credito', signal));
           current.onTarjetaMovimientosReader?.((tarjeta, signal) => readCredit(
             `/api/tarjetas-credito/movimientos?${new URLSearchParams({ tarjeta })}`, signal));
@@ -281,9 +282,9 @@
     }
   }
 
-  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader }) {
+  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader }) {
     clearCredential();
-    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader };
+    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader };
     view = current;
     clear.hidden = true;
     retry.onclick = () => prepare(current);

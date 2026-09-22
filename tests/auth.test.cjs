@@ -249,7 +249,7 @@ test('temporary write UI and fixed payload are absent from frontend assets', () 
   }
 });
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader } = {}) {
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
@@ -282,7 +282,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   function mount() {
     const elements = Object.fromEntries(['button', 'status', 'retry', 'clear'].map(key =>
       [key, { hidden: false, textContent: '', clientWidth: 260, replaceChildren() {} }]));
-    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader });
+    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader });
     return { ...elements, dispose };
   }
   return { window, navigator, events, scripts, timers, calls, id, mount };
@@ -673,4 +673,24 @@ test('failed authorization or Sheets connectivity never requests dashboard', asy
     await h.calls.config.callback({ credential: 'synthetic-test-value' });
     assert.equal(paths.includes('/api/dashboard'), false);
   }
+});
+
+test('card expenses reader is published only after authorization and reads the fixed API without persistence', async () => {
+  let reader, status = 200;
+  const paths = [];
+  const h = harness({ apiBaseUrl: 'https://api.example.test', onCardExpensesReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+    const path = new URL(url).pathname; paths.push(path);
+    assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
+    assert.equal(options.credentials, 'omit'); assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error');
+    return { status: path === '/api/gastos-tarjetas' ? status : 200, json: async () => path === '/auth/me'
+      ? { authenticated: true, authorized: true } : path === '/api/sheets/status' ? { connected: true } : { total: 0, numeroCompras: 0, categorias: [] } };
+  } });
+  const ui = h.mount(); await settle(); assert.equal(reader, undefined);
+  h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+  assert.deepEqual(paths, ['/auth/me', '/api/sheets/status']);
+  assert.deepEqual(await reader(), { total: 0, numeroCompras: 0, categorias: [] });
+  assert.equal(paths.at(-1), '/api/gastos-tarjetas');
+  status = 403; await assert.rejects(reader());
+  const count = paths.length; await assert.rejects(reader()); assert.equal(paths.length, count);
+  assert.match(ui.status.textContent, /Vuelve a iniciar/);
 });

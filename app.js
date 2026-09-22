@@ -26,6 +26,7 @@ function login() {
     onTarjetasReader: reader => navigation.setTarjetasReader(reader),
     onTarjetaMovimientosReader: reader => navigation.setTarjetaMovimientosReader(reader),
     onMSIReader: reader => navigation.setMSIReader(reader),
+    onCardExpensesReader: reader => navigation.setCardExpensesReader(reader),
     onNextCutReader: reader => navigation.setNextCutReader(reader),
     onDashboard: (state, data) => {
       navigation.update(state, data);

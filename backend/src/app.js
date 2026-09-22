@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { createCardExpensesReader } from './gastos-tarjetas.js';
 import { ALLOWED_ORIGINS } from './config.js';
 import { createVerifier } from './verify.js';
 import { createSheetsCheck } from './sheets.js';
@@ -30,7 +31,7 @@ export function bearerToken(req) {
 export function createApp({ authorizedSub = '', verify = createVerifier(), verificationTimeoutMs = 10000,
   checkSheets = createSheetsCheck(), writeMovement = createMovementWriter(), readDashboard = createDashboardReader(), readTurnos = createTurnosReader(),
   readTarjetas = createTarjetasReader(), readCardMovements = createCardMovementsReader(), readMSI = createMSIReader(),
-  readNextCut = createNextCutReader({ readMSI }) } = {}) {
+  readCardExpenses = createCardExpensesReader({ readTarjetas }), readNextCut = createNextCutReader({ readMSI }) } = {}) {
   const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000 }, async (req, res) => {
     try {
       res.setHeader('Vary', 'Origin');
@@ -44,7 +45,7 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
       const msiRoute = req.url.split('?')[0] === '/api/tarjetas-credito/msi';
       const nextCutRoute = req.url.split('?')[0] === '/api/tarjetas-credito/proximo-corte';
       const method = turnosRoute || cardMovementsRoute || msiRoute || nextCutRoute ? 'GET' : ['/auth/me', '/api/movimientos'].includes(req.url) ? 'POST'
-        : ['/health', '/api/sheets/status', '/api/dashboard', '/api/tarjetas-credito'].includes(req.url) ? 'GET' : null;
+        : ['/health', '/api/sheets/status', '/api/dashboard', '/api/tarjetas-credito', '/api/gastos-tarjetas'].includes(req.url) ? 'GET' : null;
       if (!method) return reply(res, 404, { error: 'not_found' });
       if (req.method === 'OPTIONS') {
         const requested = (req.headers['access-control-request-headers'] || '')
@@ -90,6 +91,10 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
         catch { return reply(res, 400, { error: 'invalid_range' }); }
         try { return reply(res, 200, await readTurnos(range)); }
         catch { return reply(res, 503, { error: 'turnos_unavailable' }); }
+      }
+      if (req.url === '/api/gastos-tarjetas') {
+        try { return reply(res, 200, await readCardExpenses()); }
+        catch { return reply(res, 503, { error: 'card_expenses_unavailable' }); }
       }
       if (req.url === '/api/dashboard') {
         try { return reply(res, 200, await readDashboard()); }

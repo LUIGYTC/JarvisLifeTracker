@@ -21,13 +21,16 @@
           <span class="module-state">${module.active ? 'Abrir módulo →' : 'Próximamente'}</span></button>`).join('')}</section>
       </main><section id="finance-view" hidden aria-label="Finanzas">
         <div class="shell finance-navigation"><button id="back-home" type="button" class="demo-button">← Volver a Jarvis</button></div>
-        <div class="shell finance-tabs" role="group" aria-label="Vistas de Finanzas"><button id="finance-movimientos" type="button" aria-pressed="true" aria-controls="dashboard-data">Movimientos</button><button id="finance-tarjetas" type="button" aria-pressed="false" aria-controls="credit-data">Tarjetas de crédito</button></div>
-        <div id="dashboard-data" tabindex="-1"></div><div id="credit-data" tabindex="-1" hidden></div></section><section id="rutinas-view" hidden aria-label="Rutinas"><div class="shell finance-navigation"><button id="rutinas-back" type="button" class="demo-button">&#8592; Volver a Jarvis</button></div><div id="rutinas-content" class="shell routines" tabindex="-1"></div></section>`;
+        <div class="shell finance-tabs" role="group" aria-label="Vistas de Finanzas"><button id="finance-movimientos" type="button" aria-pressed="true" aria-controls="dashboard-data">Movimientos</button><button id="finance-tarjetas" type="button" aria-pressed="false" aria-controls="credit-data">Tarjetas de crédito</button><button id="finance-expenses" type="button" aria-pressed="false" aria-controls="expenses-data">Gastos con tarjetas</button></div>
+        <div id="expenses-data" tabindex="-1" hidden></div><div id="dashboard-data" tabindex="-1"></div><div id="credit-data" tabindex="-1" hidden></div></section><section id="rutinas-view" hidden aria-label="Rutinas"><div class="shell finance-navigation"><button id="rutinas-back" type="button" class="demo-button">&#8592; Volver a Jarvis</button></div><div id="rutinas-content" class="shell routines" tabindex="-1"></div></section>`;
     const home = root.querySelector('#jarvis-home');
     const finance = root.querySelector('#finance-view');
     const content = root.querySelector('#dashboard-data');
     const creditContent = root.querySelector('#credit-data');
     const credit = window.JarvisTarjetas.mount(creditContent);
+    const expensesContent = root.querySelector('#expenses-data');
+    const expenses = window.JarvisCardExpenses.mount(expensesContent);
+    const expensesButton = root.querySelector('#finance-expenses');
     const movementButton = root.querySelector('#finance-movimientos');
     const creditButton = root.querySelector('#finance-tarjetas');
     const routines = root.querySelector('#rutinas-view');
@@ -35,12 +38,16 @@
     const calendar = window.JarvisRutinas.mount(routineContent);
     function showFinance(section) {
       financeSection = section;
+      expensesContent.hidden = section !== 'expenses';
+      expensesButton.setAttribute('aria-pressed', String(section === 'expenses'));
+      if (active && section === 'expenses') expenses.open();
       content.hidden = section !== 'movimientos';
       creditContent.hidden = section !== 'tarjetas';
       movementButton.setAttribute('aria-pressed', String(section === 'movimientos'));
       creditButton.setAttribute('aria-pressed', String(section === 'tarjetas'));
       if (active && section === 'tarjetas') credit.open();
     }
+    expensesButton.onclick = () => { if (active) showFinance('expenses'); };
     movementButton.onclick = () => { if (active) showFinance('movimientos'); };
     creditButton.onclick = () => { if (active) showFinance('tarjetas'); };
     function show(view) {
@@ -52,7 +59,7 @@
       if (view === 'rutinas') calendar.open();
       if (view === 'finanzas') showFinance(financeSection);
       window.scrollTo(0, 0);
-      (view === 'home' ? home : view === 'rutinas' ? routineContent : financeSection === 'tarjetas' ? creditContent : content).focus({ preventScroll: true });
+      (view === 'home' ? home : view === 'rutinas' ? routineContent : financeSection === 'expenses' ? expensesContent : financeSection === 'tarjetas' ? creditContent : content).focus({ preventScroll: true });
     }
     root.querySelector('#module-finanzas').onclick = () => show('finanzas');
     root.querySelector('#module-rutinas').onclick = () => show('rutinas');
@@ -60,6 +67,7 @@
     root.querySelector('#back-home').onclick = () => show('home');
     root.querySelector('#close-session').onclick = onExit;
     return Object.freeze({
+      setCardExpensesReader(reader) { expenses.setReader(reader); },
       setTurnosReader(reader) { calendar.setReader(reader); },
       setTarjetasReader(reader) { credit.setReader(reader); },
       setTarjetaMovimientosReader(reader) { credit.setMovementsReader(reader); },
@@ -75,6 +83,7 @@
           routines.hidden = true;
           calendar.reset();
           credit.reset();
+          expenses.reset();
           showFinance('movimientos');
           home.hidden = false;
           return;
