@@ -34,7 +34,7 @@ El detalle usa los datos ya cargados y llama «Saldo actual» al campo `utilizad
 Muestra tipo, utilización, disponible, límite, corte, fechas y domiciliación registrada.
 Volver a «Tarjetas de crédito» restaura la vista general en memoria sin otra lectura
 ni autenticación. No se incluyen cortes históricos, próximo pago, saldo al corte,
-MSI, pagos ni edición.
+pagos ni edición.
 
 `GET /api/tarjetas-credito/movimientos?tarjeta=...` acepta exactamente un nombre de
 tarjeta, con máximo 100 caracteres. Después de autenticar y autorizar, valida el
@@ -48,6 +48,36 @@ en cada movimiento; no devuelve Origen, Texto original ni otras columnas.
 Errores de lectura devuelven un error genérico 503. El detalle conserva los datos de
 la tarjeta y permite reintentar la lectura de movimientos. Volver, seleccionar otra
 tarjeta o cerrar sesión aborta la lectura e invalida las respuestas tardías.
+
+## MSI activos
+
+`GET /api/tarjetas-credito/msi?tarjeta=...` usa la misma autenticación, validación de
+selección contra tarjetas existentes, CORS y `no-store`. Solo acepta un nombre de
+tarjeta; no permite parámetros adicionales ni rangos del cliente. Tras validar la
+tarjeta, lee exclusivamente `'ComprasMSI'!A:H` con ADC de solo lectura y valores
+numéricos sin formato. No escribe ni consulta Movimientos para calcular los MSI.
+
+Filtra por coincidencia exacta de Tarjeta y Estado `Activo`. Devuelve
+`{ tarjeta, compras, totalMensualMSI }`; cada compra solo contiene `compra`,
+`mensualidad`, `mesActual`, `mesesTotales` y `proximoCorte`. Nota no se devuelve ni
+se registra en logs. Se suman centavos enteros seguros de todas las filas activas
+de la tarjeta; no se agrupan ni excluyen compras según su próximo corte.
+
+Mensualidad debe ser positiva, finita y tener como máximo dos decimales; se aceptan
+números nativos o textos decimales con punto. Los meses son enteros seguros y cumplen
+1 ≤ mesActual ≤ mesesTotales. Próximo corte admite fecha ISO, serial nativo o D/M/YYYY;
+si está vacío devuelve null. Filas vacías y compras de otra tarjeta o estado se ignoran.
+Una fila activa seleccionada inválida, encabezados incorrectos, más de 10 000 filas o
+desbordamiento monetario producen un error genérico 503 para no mostrar un total
+parcial engañoso. Sin MSI devuelve compras vacías y total cero.
+
+El detalle muestra una sección separada «MSI activos» y el total como «Comprometido
+en próximo corte», aclarando que son solo mensualidades MSI activas. No representa
+saldo al corte ni pago para no generar intereses. La carga de MSI y movimientos es
+independiente; los errores son genéricos y se puede reintentar. Ambas solicitudes se
+abortan al volver o cerrar sesión; los resultados tardíos se descartan. Todo permanece
+en memoria y el service worker excluye ambas APIs. No se avanzan mensualidades ni se
+registran automáticamente gastos nuevos; las pruebas usan solo compras sintéticas.
 
 Tarjetas y token permanecen únicamente en memoria. Cerrar sesión, descartar identidad,
 salir o perder conexión aborta las lecturas, invalida respuestas tardías y limpia la

@@ -63,6 +63,7 @@
       setTurnosReader(reader) { calendar.setReader(reader); },
       setTarjetasReader(reader) { credit.setReader(reader); },
       setTarjetaMovimientosReader(reader) { credit.setMovementsReader(reader); },
+      setMSIReader(reader) { credit.setMSIReader(reader); },
       update(state, data) {
         window.JarvisDashboard.render(content, state, data);
         if (state === 'reset') {

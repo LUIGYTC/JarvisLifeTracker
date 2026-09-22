@@ -99,6 +99,68 @@ function action(root, selector, index, key) {
   else root.onclick({ target });
 }
 const movement = { fecha: '2032-01-20', descripcion: 'Compra sintética', categoria: 'Prueba', monto: 12.34, tipo: 'Gasto' };
+const syntheticMSI = { compra: 'Artículo sintético Alfa', mensualidad: 20.1, mesActual: 2, mesesTotales: 8, proximoCorte: '2034-02-15' };
+
+test('MSI section displays only active installment commitment separately from current balance and movements', async () => {
+  const { root, view } = setup(); const calls = [];
+  view.setReader(async () => ({ tarjetas: [card()] }));
+  view.setMovementsReader(async tarjeta => ({ tarjeta, movimientos: [movement] }));
+  view.setMSIReader(async tarjeta => { calls.push(tarjeta); return { tarjeta, totalMensualMSI: 50.3, compras: [syntheticMSI,
+    { ...syntheticMSI, compra: 'Artículo sintético Beta', mensualidad: 30.2 }] }; });
+  await view.open(); assert.equal(calls.length, 0); action(root, '[data-credit-card]', 0); await settle();
+  const msiSection = root.innerHTML.split('class="card section credit-msi"')[1].split('class="card section credit-movements"')[0];
+  for (const label of ['MSI activos', 'Comprometido en próximo corte', '$50.30', '$20.10', '$30.20', '2 de 8', '15 feb 2034', '/ mes']) assert.ok(msiSection.includes(label), label);
+  assert.doesNotMatch(msiSection, /Compra sintética|Saldo actual|saldo al corte|pago del corte|deuda total/i);
+  const movementSection = root.innerHTML.split('class="card section credit-movements"')[1];
+  assert.match(movementSection, /Compra sintética/); assert.doesNotMatch(movementSection, /Artículo sintético/);
+  assert.match(root.innerHTML, /Saldo actual/); assert.deepEqual(calls, ['Sintética A']);
+});
+
+test('MSI empty state and errors preserve card data and independently loaded movements', async () => {
+  const { root, view } = setup(); let fail = false;
+  view.setReader(async () => ({ tarjetas: [card()] }));
+  view.setMovementsReader(async tarjeta => ({ tarjeta, movimientos: [movement] }));
+  view.setMSIReader(async tarjeta => { if (fail) throw Error('private-provider-error'); return { tarjeta, totalMensualMSI: 0, compras: [] }; });
+  await view.open(); action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /No hay compras a MSI activas/);
+  fail = true; action(root, '[data-credit-back]'); action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /No se pudieron cargar los MSI/); assert.match(root.innerHTML, /Compra sintética/);
+  assert.doesNotMatch(root.innerHTML, /private-provider-error/);
+  fail = false; action(root, '[data-credit-msi-retry]'); await settle();
+  assert.match(root.innerHTML, /No hay compras a MSI activas/);
+});
+
+test('MSI rendering rejects mismatched cards or totals and escapes purchase labels without exposing Nota', async () => {
+  const { root, view } = setup();
+  view.setReader(async () => ({ tarjetas: [card()] })); await view.open();
+  for (const payload of [{ tarjeta: 'Other', totalMensualMSI: 20.1, compras: [syntheticMSI] },
+    { tarjeta: 'Sintética A', totalMensualMSI: 99, compras: [syntheticMSI] },
+    { tarjeta: 'Sintética A', totalMensualMSI: 20.1, compras: [{ ...syntheticMSI, mesActual: 10 }] }]) {
+    view.setMSIReader(async () => payload); action(root, '[data-credit-card]', 0); await settle();
+    assert.match(root.innerHTML, /No se pudieron cargar los MSI/);
+  }
+  view.setMSIReader(async tarjeta => ({ tarjeta, totalMensualMSI: 20.1, compras: [{ ...syntheticMSI, compra: '<img src=x>', nota: 'private-note' }] }));
+  action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /&lt;img src=x&gt;/); assert.doesNotMatch(root.innerHTML, /<img|private-note/);
+});
+
+test('MSI pending requests abort on back and reset; late results never restore another card or closed view', async () => {
+  const { root, view } = setup(); const pending = [];
+  view.setReader(async () => ({ tarjetas: [card(), card({ tarjeta: 'Sintética B' })] }));
+  view.setMSIReader((tarjeta, signal) => new Promise(resolve => pending.push({ tarjeta, signal, resolve })));
+  await view.open(); action(root, '[data-credit-card]', 0); await settle();
+  action(root, '[data-credit-back]'); assert.equal(pending[0].signal.aborted, true);
+  action(root, '[data-credit-card]', 1);
+  pending[0].resolve({ tarjeta: pending[0].tarjeta, totalMensualMSI: 20.1, compras: [syntheticMSI] }); await settle();
+  assert.match(root.innerHTML, /Sintética B/); assert.doesNotMatch(root.innerHTML, /Artículo sintético Alfa/);
+  view.reset(); assert.equal(pending[1].signal.aborted, true);
+  pending[1].resolve({ tarjeta: pending[1].tarjeta, totalMensualMSI: 20.1, compras: [syntheticMSI] }); await settle();
+  assert.equal(root.innerHTML, '');
+});
+
+test('MSI source contains no synthetic fixtures, persistence or automatic expense registration', () => {
+  assert.doesNotMatch(source, /Artículo sintético|2034-02-15|localStorage|sessionStorage|indexedDB|document\.cookie|\/api\/movimientos|method:\s*['"]POST/);
+});
 
 test('click and keyboard open the selected card with current balance, recorded fields and its movements', async () => {
   const { root, view } = setup(); const calls = [];

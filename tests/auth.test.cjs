@@ -122,6 +122,44 @@ test('card movement reads are aborted and late JSON rejected on session exit or 
   }
 });
 
+test('MSI reader is authenticated, encodes exact card, uses no-store and revokes on denial', async () => {
+  let reader, status = 200, calls = 0;
+  const h = harness({ apiBaseUrl: 'https://api.example.test', onMSIReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+    if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+    if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+    calls++; assert.equal(new URL(url).pathname, '/api/tarjetas-credito/msi');
+    assert.equal(new URL(url).searchParams.get('tarjeta'), 'Synthetic + & A');
+    assert.equal(options.method, 'GET'); assert.equal(options.cache, 'no-store'); assert.equal(options.credentials, 'omit');
+    assert.equal(options.redirect, 'error'); assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
+    return { status, json: async () => ({ tarjeta: 'Synthetic + & A', compras: [], totalMensualMSI: 0 }) };
+  } });
+  h.mount(); await settle(); assert.equal(reader, undefined);
+  h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+  assert.equal(calls, 0); await reader('Synthetic + & A');
+  status = 403; await assert.rejects(reader('Synthetic + & A')); await assert.rejects(reader('Synthetic + & A'));
+  assert.equal(calls, 2);
+});
+
+test('MSI reads abort and reject late data on logout, offline, discard, pagehide, timeout and cancellation', async () => {
+  for (const action of ['discard', 'dispose', 'offline', 'pagehide', 'caller', 'timeout']) {
+    let reader, signal, resolveLate;
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onMSIReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+      if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+      signal = options.signal; return { status: 200, json: () => new Promise(resolve => { resolveLate = resolve; }) };
+    } });
+    const ui = h.mount(); await settle(); h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    const controller = new AbortController(), pending = assert.rejects(reader('Synthetic', controller.signal)); await settle();
+    if (action === 'discard') ui.clear.onclick();
+    if (action === 'dispose') ui.dispose();
+    if (action === 'offline') h.events.offline();
+    if (action === 'pagehide') h.events.pagehide();
+    if (action === 'caller') controller.abort();
+    if (action === 'timeout') [...h.timers.values()][0]();
+    assert.equal(signal.aborted, true); resolveLate({ tarjeta: 'Synthetic', compras: [], totalMensualMSI: 0 }); await pending;
+  }
+});
+
 test('turnos reader is authorized only after login, retains token in memory and clears on rejection', async () => {
   let reader, status = 200;
   const paths = [];
@@ -175,7 +213,7 @@ test('temporary write UI and fixed payload are absent from frontend assets', () 
   }
 });
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader } = {}) {
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
@@ -208,7 +246,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   function mount() {
     const elements = Object.fromEntries(['button', 'status', 'retry', 'clear'].map(key =>
       [key, { hidden: false, textContent: '', clientWidth: 260, replaceChildren() {} }]));
-    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader });
+    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader });
     return { ...elements, dispose };
   }
   return { window, navigator, events, scripts, timers, calls, id, mount };

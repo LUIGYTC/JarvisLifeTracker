@@ -5,6 +5,7 @@ import { createSheetsCheck } from './sheets.js';
 import { createDashboardReader } from './dashboard.js';
 import { createTarjetasReader } from './tarjetas-credito.js';
 import { createCardMovementsReader, tarjetaSelection } from './tarjeta-movimientos.js';
+import { createMSIReader } from './compras-msi.js';
 import { createTurnosReader, shiftRange } from './turnos.js';
 import { createMovementWriter } from './sheets-write.js';
 import { movimientoRow, readMovementBody } from './movimientos.js';
@@ -27,7 +28,7 @@ export function bearerToken(req) {
 
 export function createApp({ authorizedSub = '', verify = createVerifier(), verificationTimeoutMs = 10000,
   checkSheets = createSheetsCheck(), writeMovement = createMovementWriter(), readDashboard = createDashboardReader(), readTurnos = createTurnosReader(),
-  readTarjetas = createTarjetasReader(), readCardMovements = createCardMovementsReader() } = {}) {
+  readTarjetas = createTarjetasReader(), readCardMovements = createCardMovementsReader(), readMSI = createMSIReader() } = {}) {
   const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000 }, async (req, res) => {
     try {
       res.setHeader('Vary', 'Origin');
@@ -38,7 +39,8 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
       if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
       const turnosRoute = req.url.split('?')[0] === '/api/turnos';
       const cardMovementsRoute = req.url.split('?')[0] === '/api/tarjetas-credito/movimientos';
-      const method = turnosRoute || cardMovementsRoute ? 'GET' : ['/auth/me', '/api/movimientos'].includes(req.url) ? 'POST'
+      const msiRoute = req.url.split('?')[0] === '/api/tarjetas-credito/msi';
+      const method = turnosRoute || cardMovementsRoute || msiRoute ? 'GET' : ['/auth/me', '/api/movimientos'].includes(req.url) ? 'POST'
         : ['/health', '/api/sheets/status', '/api/dashboard', '/api/tarjetas-credito'].includes(req.url) ? 'GET' : null;
       if (!method) return reply(res, 404, { error: 'not_found' });
       if (req.method === 'OPTIONS') {
@@ -90,15 +92,15 @@ export function createApp({ authorizedSub = '', verify = createVerifier(), verif
         try { return reply(res, 200, await readDashboard()); }
         catch { return reply(res, 503, { error: 'dashboard_unavailable' }); }
       }
-      if (cardMovementsRoute) {
+      if (cardMovementsRoute || msiRoute) {
         let tarjeta;
         try { tarjeta = tarjetaSelection(new URL(req.url, 'http://localhost').searchParams); }
         catch { return reply(res, 400, { error: 'invalid_selection' }); }
         try {
           const { tarjetas } = await readTarjetas();
           if (!tarjetas.some(card => card.tarjeta === tarjeta)) return reply(res, 404, { error: 'card_not_found' });
-          return reply(res, 200, await readCardMovements(tarjeta));
-        } catch { return reply(res, 503, { error: 'card_movements_unavailable' }); }
+          return reply(res, 200, await (msiRoute ? readMSI : readCardMovements)(tarjeta));
+        } catch { return reply(res, 503, { error: msiRoute ? 'msi_unavailable' : 'card_movements_unavailable' }); }
       }
       if (req.url === '/api/tarjetas-credito') {
         try { return reply(res, 200, await readTarjetas()); }

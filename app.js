@@ -25,6 +25,7 @@ function login() {
     onTurnosReader: reader => navigation.setTurnosReader(reader),
     onTarjetasReader: reader => navigation.setTarjetasReader(reader),
     onTarjetaMovimientosReader: reader => navigation.setTarjetaMovimientosReader(reader),
+    onMSIReader: reader => navigation.setMSIReader(reader),
     onDashboard: (state, data) => {
       navigation.update(state, data);
       loginScreen.hidden = state !== 'reset';

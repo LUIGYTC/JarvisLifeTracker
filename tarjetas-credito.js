@@ -47,7 +47,7 @@
       </article>`).join('')}</section>`;
   }
   const showDate = value => value ? escape(date.format(new Date(`${value}T00:00:00Z`))) : 'Sin registrar';
-  function detail(card, body) {
+  function detail(card, body, msiBody) {
     return `<div class="shell credit-detail"><button type="button" class="demo-button credit-retry" data-credit-back>← Tarjetas de crédito</button>
       <section class="card credit-detail-header section"><p class="muted">${escape(card.tipo)}</p><h1 tabindex="-1" data-credit-heading>${escape(card.tarjeta)}</h1>
         <p class="credit-utilization">${percent.format(card.porcentajeUtilizacion)}% de utilización</p>
@@ -59,7 +59,25 @@
         ${card.fechaLimitePago ? `<div><dt>Fecha límite de pago</dt><dd>${showDate(card.fechaLimitePago)}</dd></div>` : ''}
         ${card.domiciliadaA ? `<div><dt>Domiciliada a</dt><dd>${escape(card.domiciliadaA)}</dd></div>` : ''}
         <div><dt>Última actualización</dt><dd>${showDate(card.ultimaActualizacion)}</dd></div></dl></section>
+      <section class="card section credit-msi"><h2>MSI activos</h2><div aria-live="polite" data-credit-msi>${msiBody}</div></section>
       <section class="card section credit-movements"><h2>Movimientos recientes</h2><div aria-live="polite" data-credit-movements>${body}</div></section></div>`;
+  }
+  function msi(data, tarjeta) {
+    if (data?.tarjeta !== tarjeta || !Array.isArray(data.compras) || !validMoney(data.totalMensualMSI) || data.totalMensualMSI < 0) throw new Error('Invalid MSI');
+    let cents = 0;
+    for (const item of data.compras) {
+      if (!item || typeof item.compra !== 'string' || !item.compra.trim() || !validMoney(item.mensualidad) || item.mensualidad <= 0 ||
+          !Number.isSafeInteger(item.mesActual) || !Number.isSafeInteger(item.mesesTotales) || item.mesActual < 1 || item.mesActual > item.mesesTotales) throw new Error('Invalid MSI');
+      if (item.proximoCorte !== null && (typeof item.proximoCorte !== 'string' || !/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(item.proximoCorte) ||
+          !Number.isFinite(Date.parse(item.proximoCorte)) || new Date(item.proximoCorte).toISOString().slice(0, 10) !== item.proximoCorte)) throw new Error('Invalid MSI');
+      cents += Math.round(item.mensualidad * 100);
+      if (!Number.isSafeInteger(cents)) throw new Error('Invalid MSI');
+    }
+    if (cents !== Math.round(data.totalMensualMSI * 100)) throw new Error('Invalid MSI');
+    return `<div class="msi-commitment"><span class="label">Comprometido en próximo corte</span><strong>${money.format(data.totalMensualMSI)}</strong><span class="muted">Solo mensualidades MSI activas</span></div>` +
+      (data.compras.length ? `<ul class="credit-transactions">${data.compras.map(item => `<li><div><strong>${escape(item.compra)}</strong><p class="muted">${item.mesActual} de ${item.mesesTotales}</p>
+        ${item.proximoCorte ? `<p class="muted">Próximo corte: ${showDate(item.proximoCorte)}</p>` : ''}</div><div class="credit-transaction-amount"><strong>${money.format(item.mensualidad)}</strong><span>/ mes</span></div></li>`).join('')}</ul>`
+        : '<p class="muted">No hay compras a MSI activas.</p>');
   }
   function movements(data, tarjeta) {
     if (data?.tarjeta !== tarjeta || !Array.isArray(data.movimientos) || data.movimientos.length > 10) throw new Error('Invalid movements');
@@ -76,6 +94,7 @@
   function mount(root) {
     let reader = null, controller = null, generation = 0, state = 'idle';
     let cards = [], total = 0, selected = null, movementReader = null, detailController = null, detailGeneration = 0;
+    let msiReader = null;
     function render(body) {
       root.innerHTML = `<div class="shell credit-overview"><header class="top"><h1>Tarjetas de crédito</h1></header>${body}</div>`;
     }
@@ -109,22 +128,30 @@
       const card = cards[index], attempt = detailGeneration;
       detailController = new AbortController();
       const signal = detailController.signal;
-      root.innerHTML = detail(card, '<p role="status">Cargando movimientos…</p>');
+      const bodies = { movements: '<p role="status">Cargando movimientos…</p>', msi: '<p role="status">Cargando MSI…</p>' };
+      root.innerHTML = detail(card, bodies.movements, bodies.msi);
       if (focus) root.querySelector?.('[data-credit-heading]')?.focus();
-      const updateMovements = body => {
-        const container = root.querySelector?.('[data-credit-movements]');
+      const updateSection = (section, body) => {
+        bodies[section] = body;
+        const container = root.querySelector?.(`[data-credit-${section}]`);
         if (container) container.innerHTML = body;
-        else root.innerHTML = detail(card, body);
+        else root.innerHTML = detail(card, bodies.movements, bodies.msi);
       };
-      try {
-        if (!movementReader) throw new Error('Unavailable');
-        const data = await movementReader(card.tarjeta, signal);
-        if (attempt !== detailGeneration || signal.aborted) return;
-        updateMovements(movements(data, card.tarjeta));
-      } catch {
-        if (attempt !== detailGeneration || signal.aborted) return;
-        updateMovements('<p role="status">No se pudieron cargar los movimientos.</p><button type="button" class="demo-button credit-retry" data-credit-movements-retry>Reintentar</button>');
-      } finally { if (attempt === detailGeneration) detailController = null; }
+      await Promise.all([
+        ['movements', movementReader, movements, 'No se pudieron cargar los movimientos.'],
+        ['msi', msiReader, msi, 'No se pudieron cargar los MSI.']
+      ].map(async ([section, read, format, error]) => {
+        try {
+          if (!read) throw new Error('Unavailable');
+          const data = await read(card.tarjeta, signal);
+          if (attempt !== detailGeneration || signal.aborted) return;
+          updateSection(section, format(data, card.tarjeta));
+        } catch {
+          if (attempt !== detailGeneration || signal.aborted) return;
+          updateSection(section, `<p role="status">${error}</p><button type="button" class="demo-button credit-retry" data-credit-${section}-retry>Reintentar</button>`);
+        }
+      }));
+      if (attempt === detailGeneration) detailController = null;
     }
     function back() {
       const index = selected;
@@ -134,7 +161,7 @@
     }
     function reset() {
       cancelDetail();
-      cards = []; total = 0; selected = null; movementReader = null;
+      cards = []; total = 0; selected = null; movementReader = null; msiReader = null;
       generation++;
       controller?.abort();
       controller = null;
@@ -147,6 +174,7 @@
       if (state !== 'loaded') return;
       if (event.target.closest('[data-credit-back]')) { back(); return; }
       if (event.target.closest('[data-credit-movements-retry]')) { if (selected !== null) select(selected, false); return; }
+      if (event.target.closest('[data-credit-msi-retry]')) { if (selected !== null) select(selected, false); return; }
       const card = event.target.closest('[data-credit-card]');
       if (card) select(Number(card.dataset.creditCard));
     };
@@ -154,7 +182,7 @@
       const card = event.target.closest('[data-credit-card]');
       if (card && ['Enter', ' '].includes(event.key)) { event.preventDefault(); select(Number(card.dataset.creditCard)); }
     };
-    return Object.freeze({ open, reset, setReader(value) { reset(); reader = value; }, setMovementsReader(value) { movementReader = value; } });
+    return Object.freeze({ open, reset, setReader(value) { reset(); reader = value; }, setMovementsReader(value) { movementReader = value; }, setMSIReader(value) { msiReader = value; } });
   }
   window.JarvisTarjetas = Object.freeze({ mount });
 })();
