@@ -160,6 +160,42 @@ test('MSI reads abort and reject late data on logout, offline, discard, pagehide
   }
 });
 
+test('next cut reader uses authorized fixed GET, exact selection and no-store, then revokes on rejection', async () => {
+  let reader, status = 200, calls = 0;
+  const h = harness({ apiBaseUrl: 'https://api.example.test', onNextCutReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+    if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+    if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+    calls++; assert.equal(new URL(url).pathname, '/api/tarjetas-credito/proximo-corte');
+    assert.equal(new URL(url).searchParams.get('tarjeta'), 'Synthetic + & A');
+    assert.equal(options.method, 'GET'); assert.equal(options.credentials, 'omit'); assert.equal(options.cache, 'no-store');
+    assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
+    return { status, json: async () => ({}) };
+  } });
+  h.mount(); await settle(); assert.equal(reader, undefined); h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+  assert.equal(calls, 0); await reader('Synthetic + & A'); status = 401;
+  await assert.rejects(reader('Synthetic + & A')); await assert.rejects(reader('Synthetic + & A')); assert.equal(calls, 2);
+});
+
+test('next cut reads abort on exit, offline, discard, caller cancellation and timeout; late JSON is rejected', async () => {
+  for (const action of ['discard', 'dispose', 'offline', 'pagehide', 'caller', 'timeout']) {
+    let reader, signal, resolveLate;
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onNextCutReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+      if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+      signal = options.signal; return { status: 200, json: () => new Promise(resolve => { resolveLate = resolve; }) };
+    } });
+    const ui = h.mount(); await settle(); h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    const controller = new AbortController(), pending = assert.rejects(reader('Synthetic', controller.signal)); await settle();
+    if (action === 'discard') ui.clear.onclick();
+    if (action === 'dispose') ui.dispose();
+    if (action === 'offline') h.events.offline();
+    if (action === 'pagehide') h.events.pagehide();
+    if (action === 'caller') controller.abort();
+    if (action === 'timeout') [...h.timers.values()][0]();
+    assert.equal(signal.aborted, true); resolveLate({}); await pending;
+  }
+});
+
 test('turnos reader is authorized only after login, retains token in memory and clears on rejection', async () => {
   let reader, status = 200;
   const paths = [];
@@ -213,7 +249,7 @@ test('temporary write UI and fixed payload are absent from frontend assets', () 
   }
 });
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader } = {}) {
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
@@ -246,7 +282,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   function mount() {
     const elements = Object.fromEntries(['button', 'status', 'retry', 'clear'].map(key =>
       [key, { hidden: false, textContent: '', clientWidth: 260, replaceChildren() {} }]));
-    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader });
+    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader });
     return { ...elements, dispose };
   }
   return { window, navigator, events, scripts, timers, calls, id, mount };

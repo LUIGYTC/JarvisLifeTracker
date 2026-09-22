@@ -100,6 +100,50 @@ function action(root, selector, index, key) {
 }
 const movement = { fecha: '2032-01-20', descripcion: 'Compra sintética', categoria: 'Prueba', monto: 12.34, tipo: 'Gasto' };
 const syntheticMSI = { compra: 'Artículo sintético Alfa', mensualidad: 20.1, mesActual: 2, mesesTotales: 8, proximoCorte: '2034-02-15' };
+const syntheticCut = { fechaCorte: '2034-06-17', inicioPeriodo: '2034-05-18', finPeriodo: '2034-06-17', comprasNormales: 33.33, msi: 7.77, totalAcumulado: 41.1 };
+
+test('next cut highlights accumulated total and breakdown independently from current balance', async () => {
+  const { root, view } = setup(); const calls = [];
+  view.setReader(async () => ({ tarjetas: [card()] }));
+  view.setNextCutReader(async name => { calls.push(name); return syntheticCut; });
+  await view.open(); assert.equal(calls.length, 0); action(root, '[data-credit-card]', 0); await settle();
+  const section = root.innerHTML.split('class="card section credit-next-cut"')[1].split('class="card section credit-cut"')[0];
+  for (const label of ['Próximo corte', 'Total acumulado', '$41.10', 'Compras del periodo', '$33.33', 'MSI', '$7.77', 'Periodo:', '18 may 2034', '17 jun 2034']) assert.ok(section.includes(label), label);
+  assert.doesNotMatch(section, /Saldo actual|saldo al corte|pago mínimo|deuda total|pago para no generar intereses/i);
+  assert.match(root.innerHTML, /Saldo actual/); assert.deepEqual(calls, ['Sintética A']);
+  action(root, '[data-credit-back]'); action(root, '[data-credit-card]', 0); await settle(); assert.equal(calls.length, 2);
+});
+
+test('next cut handles zero totals and absent cut day without fabricated dates or requests', async () => {
+  const { root, view } = setup(); let calls = 0;
+  view.setReader(async () => ({ tarjetas: [card({ diaCorte: null })] }));
+  view.setNextCutReader(async () => { calls++; return syntheticCut; }); await view.open(); action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /No hay día de corte registrado/); assert.equal(calls, 0);
+  view.setReader(async () => ({ tarjetas: [card()] })); view.setNextCutReader(async () => ({ ...syntheticCut, comprasNormales: 0, msi: 0, totalAcumulado: 0 }));
+  await view.open(); action(root, '[data-credit-card]', 0); await settle(); assert.match(root.innerHTML, /\$0\.00/);
+});
+
+test('next cut failures and malformed totals stay generic while other detail sections remain usable', async () => {
+  const { root, view } = setup(); let fail = true;
+  view.setReader(async () => ({ tarjetas: [card()] }));
+  view.setMovementsReader(async tarjeta => ({ tarjeta, movimientos: [movement] }));
+  view.setNextCutReader(async () => { if (fail) throw Error('private-error'); return syntheticCut; });
+  await view.open(); action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /No se pudo calcular el próximo corte/); assert.match(root.innerHTML, /Compra sintética/); assert.doesNotMatch(root.innerHTML, /private-error/);
+  fail = false; action(root, '[data-credit-cut-retry]'); await settle(); assert.match(root.innerHTML, /\$41\.10/);
+  view.setNextCutReader(async () => ({ ...syntheticCut, totalAcumulado: 1 })); action(root, '[data-credit-cut-retry]'); await settle();
+  assert.match(root.innerHTML, /No se pudo calcular el próximo corte/);
+});
+
+test('next cut responses cannot restore a detail after back, another selection or logout', async () => {
+  const { root, view } = setup(); const pending = [];
+  view.setReader(async () => ({ tarjetas: [card(), card({ tarjeta: 'Sintética B' })] }));
+  view.setNextCutReader((name, signal) => new Promise(resolve => pending.push({ name, signal, resolve })));
+  await view.open(); action(root, '[data-credit-card]', 0); action(root, '[data-credit-back]'); action(root, '[data-credit-card]', 1);
+  assert.equal(pending[0].signal.aborted, true); pending[0].resolve(syntheticCut); await settle();
+  assert.match(root.innerHTML, /Sintética B/); assert.doesNotMatch(root.innerHTML, /\$41\.10/);
+  view.reset(); assert.equal(pending[1].signal.aborted, true); pending[1].resolve(syntheticCut); await settle(); assert.equal(root.innerHTML, '');
+});
 
 test('MSI section displays only active installment commitment separately from current balance and movements', async () => {
   const { root, view } = setup(); const calls = [];

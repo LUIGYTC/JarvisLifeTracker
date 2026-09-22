@@ -136,6 +136,8 @@
             `/api/tarjetas-credito/movimientos?${new URLSearchParams({ tarjeta })}`, signal));
           current.onMSIReader?.((tarjeta, signal) => readCredit(
             `/api/tarjetas-credito/msi?${new URLSearchParams({ tarjeta })}`, signal));
+          current.onNextCutReader?.((tarjeta, signal) => readCredit(
+            `/api/tarjetas-credito/proximo-corte?${new URLSearchParams({ tarjeta })}`, signal));
           current.onTurnosReader?.(async (from, to, signal) => {
             if (!authorized || !credential || attempt !== generation || view !== current) throw new Error('Unavailable');
             const read = new AbortController();
@@ -279,9 +281,9 @@
     }
   }
 
-  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader }) {
+  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader }) {
     clearCredential();
-    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader };
+    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader };
     view = current;
     clear.hidden = true;
     retry.onclick = () => prepare(current);

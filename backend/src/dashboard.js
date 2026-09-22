@@ -5,7 +5,7 @@ import { SPREADSHEET_ID } from './config.js';
 export const DASHBOARD_RANGE = "'Movimientos'!A:G";
 const headers = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método'];
 const invalid = () => { throw new Error('Invalid dashboard data'); };
-function dateText(value) {
+export function dateText(value) {
   if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 2958465) {
     value = new Date(Date.UTC(1899, 11, 30) + value * 86400000).toISOString().slice(0, 10);
   }

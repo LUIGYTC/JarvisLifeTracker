@@ -49,6 +49,38 @@ Errores de lectura devuelven un error genérico 503. El detalle conserva los dat
 la tarjeta y permite reintentar la lectura de movimientos. Volver, seleccionar otra
 tarjeta o cerrar sesión aborta la lectura e invalida las respuestas tardías.
 
+## Próximo corte dinámico
+
+`GET /api/tarjetas-credito/proximo-corte?tarjeta=...` comparte autenticación, autorización
+por sub, CORS y `no-store`. Valida la selección contra `TarjetasCredito!A:J`; solo el
+servidor determina la fecha actual y los rangos. No admite fechas ni rangos del cliente.
+Si falta un día de corte válido responde 422 sin inventar un periodo.
+
+La fecha de referencia es el día civil en `America/Mexico_City`. El próximo corte es
+el primero igual o posterior a hoy: el propio día de corte sigue en ese periodo.
+Cada corte mensual se ajusta por separado al último día válido del mes si el día
+configurado no existe. El periodo comienza al día siguiente del corte anterior y
+termina en el corte actual; ambos extremos se incluyen. No hay cierres automáticos.
+
+Compras normales: vuelve a leer `Movimientos!A:G` y suma todos los gastos válidos cuyo
+Método coincide exactamente y Fecha pertenece al periodo. No usa la lista truncada
+de movimientos recientes ni suma ingresos o el saldo Utilizado del snapshot.
+MSI: reutiliza la lectura de `ComprasMSI!A:H`, tarjeta exacta y Estado Activo; suma
+solo mensualidades cuyo Próximo corte normalizado coincide con la fecha calculada.
+MSI sin fecha o con otro corte no se incluyen. No adelanta fechas ni parcialidades.
+
+Devuelve `fechaCorte`, `inicioPeriodo`, `finPeriodo`, `comprasNormales`, `msi` y
+`totalAcumulado`. Todas las sumas se validan en centavos enteros seguros. Las filas
+inválidas relevantes o los errores de lectura producen un error genérico 503, sin
+mostrar totales parciales. Una nueva consulta vuelve a leer las fuentes; no guarda
+resultados. No usa CortesTarjeta, no crea hojas ni modifica movimientos, MSI o deuda.
+
+La sección destacada «Próximo corte» presenta «Total acumulado», compras, MSI y periodo.
+No representa un saldo cerrado ni un pago exigible. La carga es independiente de las
+otras secciones y se cancela al volver o salir. No se persiste en el navegador ni en
+la caché del service worker. La sección preexistente MSI activos conserva su listado
+de todos los compromisos activos; el cálculo nuevo solo toma los del corte indicado.
+
 ## MSI activos
 
 `GET /api/tarjetas-credito/msi?tarjeta=...` usa la misma autenticación, validación de
