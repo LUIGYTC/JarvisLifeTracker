@@ -5,8 +5,8 @@ que /auth/me. CORS y Cache-Control: no-store se mantienen. No admite query param
 para elegir hoja, rango o spreadsheet: esas URLs no corresponden a una ruta válida.
 
 La única fuente está en DASHBOARD_RANGE de backend/src/dashboard.js:
-`'MovimientosDemo'!A:G`. Usa ADC con scope spreadsheets.readonly y solo GET.
-No consulta Movimientos ni invoca las rutas de escritura. Las columnas H Origen e
+`'Movimientos'!A:G`. Usa ADC con scope spreadsheets.readonly y solo GET.
+No consulta MovimientosDemo ni invoca las rutas de escritura. Las columnas H Origen e
 I Texto original no se solicitan a Google y no aparecen en la respuesta.
 El backend de escritura preexistente permanece intacto; el frontend no lo invoca.
 
@@ -55,16 +55,16 @@ El usuario puede volver a iniciar sesión para solicitar una nueva lectura.
 Las tres gráficas de barras usan HTML/CSS y valores accesibles, sin dependencias:
 gastos por categoría, ingresos/gastos diarios y gastos por método. Importes MXN con
 Intl.NumberFormat('es-MX'). Los textos se escapan antes de insertarlos como HTML.
-Se muestra «Datos de demostración». El acceso público no contiene datos financieros
-hardcodeados y no solicita información privada. Cache PWA 2.3.6 solo incluye assets;
+Se muestra «Tus movimientos». El acceso público no contiene datos financieros
+hardcodeados y no solicita información privada. Cache PWA 2.3.13 solo incluye assets;
 no intercepta API, Authorization ni no-store.
 
 ## Antes de desplegar
 
-Confirmar encabezados, tipos de celdas y ausencia de fórmulas en MovimientosDemo.
+Confirmar encabezados, tipos de celdas y ausencia de fórmulas en Movimientos.
 Las pruebas usan datos sintéticos; no se ha leído ni modificado el Sheet real.
 Verificar en Cloud Run autenticación, acceso ADC y resultado vacío/con datos desde
 la PWA después de publicar conjuntamente los assets y activar la nueva caché.
 Revisar volumen/cuotas de lectura antes de crecer más allá del límite definido.
 La futura selección de otra fuente requiere cambiar la constante server-side y
-revisar permisos/etiqueta de demostración; el contrato del frontend no cambia.
+revisar permisos; el contrato del frontend no cambia.

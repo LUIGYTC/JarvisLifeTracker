@@ -10,8 +10,8 @@ function login() {
     <p id="auth-status" class="notice" role="status" aria-live="polite" aria-atomic="true">Cargando el inicio de sesión de Google…</p>
     <button class="google demo-button" id="retry-google" type="button" hidden>Reintentar cargar Google</button>
     <button class="google demo-button" id="clear-identity" type="button" hidden>Descartar identidad o intento</button>
-    <button class="google demo-button" id="open-demo" type="button">Explorar demo sin iniciar sesión</button>
-    <div class="notice">Inicia sesión para consultar los datos de demostración. La exploración pública no carga datos privados.</div>
+    <button class="google demo-button" id="open-demo" type="button">Explorar sin iniciar sesión</button>
+    <div class="notice">Inicia sesión para consultar tus movimientos. La exploración pública no carga datos privados.</div>
   </section></main><section id="jarvis-shell" hidden aria-label="Jarvis"></section>`;
   const loginScreen = document.querySelector('#login-screen');
   const navigation = window.JarvisNavigation.mount(document.querySelector('#jarvis-shell'), () => {

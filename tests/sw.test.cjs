@@ -68,7 +68,7 @@ test('Authorization and no-store bypass even static assets and entry navigations
 
 test('update reloads configuration and removes the previous app cache on activation', async () => {
   const handlers = {};
-  const oldCache = 'jarvislifetracker:/JarvisLifeTracker/:2.3.1';
+  const oldCache = 'jarvislifetracker:/JarvisLifeTracker/:2.3.12';
   const unrelated = 'jarvislifetracker:/another-project/:2.3.1';
   const stored = new Map([[oldCache, new Map()], [unrelated, new Map()]]);
   let installedCache;
@@ -105,6 +105,7 @@ test('update reloads configuration and removes the previous app cache on activat
   handlers.install({ waitUntil: promise => { pending = promise; } });
   await pending;
   assert.notEqual(installedCache, oldCache);
+  assert.equal(installedCache, 'jarvislifetracker:/JarvisLifeTracker/:2.3.13');
   assert.ok(requests.some(request => request.url === base + 'config.js'));
   assert.ok(requests.every(request => request.cache === 'reload'));
   handlers.activate({ waitUntil: promise => { pending = promise; } });

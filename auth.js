@@ -205,7 +205,7 @@
     current.retry.hidden = true;
     current.button.hidden = true;
     if (!navigator.onLine) {
-      current.status.textContent = 'Sin conexión: Google requiere internet. Puedes explorar la demo pública.';
+      current.status.textContent = 'Sin conexión: Google requiere internet. Puedes usar la exploración pública.';
       current.retry.hidden = false;
       return;
     }
@@ -241,7 +241,7 @@
       if (view !== current) return;
       current.button.hidden = true;
       current.retry.hidden = false;
-      current.status.textContent = 'No se pudo cargar Google. Revisa tu conexión o los bloqueadores y reintenta. La demo sigue disponible.';
+      current.status.textContent = 'No se pudo cargar Google. Revisa tu conexión o los bloqueadores y reintenta. La exploración pública sigue disponible.';
     }
   }
 

@@ -27,6 +27,14 @@ test('dashboard handles empty data and Sheets date/time serials', () => {
   const data = aggregateDashboard([header, [serial, 0.5, 'Ingreso', 'Prueba', 1, 'Descripción', 'Prueba']]);
   assert.equal(data.recent[0].fecha, '2026-09-01'); assert.equal(data.recent[0].hora, '12:00');
 });
+
+test('dashboard preserves response keys and never exposes source or original text', () => {
+  const data = aggregateDashboard([[...header, 'Origen', 'Texto original'],
+    [...rows[1], 'synthetic-source', 'synthetic-original-text']]);
+  assert.deepEqual(Object.keys(data), ['summary', 'byCategory', 'byPaymentMethod', 'daily', 'recent']);
+  assert.deepEqual(Object.keys(data.recent[0]), ['fecha', 'hora', 'tipo', 'categoria', 'monto', 'descripcion', 'metodo']);
+  assert.doesNotMatch(JSON.stringify(data), /Origen|Texto original|synthetic-source|synthetic-original-text/);
+});
 test('dashboard fails closed for invalid rows rather than displaying misleading partial totals', () => {
   for (const [index, values] of [[4, ['1', NaN, Infinity, 0, -1, 1.001, 1e-10]], [2, ['Otro', 'gasto']],
     [0, ['2026-02-30', '=TODAY()']], [1, ['24:00', '=NOW()']], [3, ['=A1', '']], [5, ['=IMPORTDATA("x")']]]) {
@@ -38,10 +46,10 @@ test('dashboard limits recent records to twenty while totals include all valid r
   const data = aggregateDashboard([header, ...Array.from({ length: 25 }, () => rows[1])]);
   assert.equal(data.recent.length, 20); assert.equal(data.summary.movimientos, 25); assert.equal(data.summary.gastos, 252.5);
 });
-test('reader uses ADC only for GET MovimientosDemo A:G and sanitizes failures', async () => {
+test('reader uses ADC only for GET Movimientos A:G and sanitizes failures', async () => {
   const auth = { getClient: async () => ({ getRequestHeaders: async () => ({}) }) };
   const reader = createDashboardReader({ auth, fetchImpl: async (url, options) => {
-    assert.match(decodeURIComponent(url.pathname), /\/values\/'MovimientosDemo'!A:G$/);
+    assert.match(decodeURIComponent(url.pathname), /\/values\/'Movimientos'!A:G$/);
     assert.equal(url.searchParams.get('valueRenderOption'), 'FORMULA');
     assert.equal(options.method, 'GET'); assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error');
     return { status: 200, json: async () => ({ values: rows }) };

@@ -2,7 +2,7 @@ import { GoogleAuth } from 'google-auth-library';
 import { SPREADSHEET_ID } from './config.js';
 
 // Server-only source. Never accept a range or spreadsheet from the request.
-export const DASHBOARD_RANGE = "'MovimientosDemo'!A:G";
+export const DASHBOARD_RANGE = "'Movimientos'!A:G";
 const headers = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método'];
 const invalid = () => { throw new Error('Invalid dashboard data'); };
 function dateText(value) {
