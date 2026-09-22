@@ -23,6 +23,7 @@ function login() {
     retry: document.querySelector('#retry-google'),
     clear: document.querySelector('#clear-identity'),
     onTurnosReader: reader => navigation.setTurnosReader(reader),
+    onTarjetasReader: reader => navigation.setTarjetasReader(reader),
     onDashboard: (state, data) => {
       navigation.update(state, data);
       loginScreen.hidden = state !== 'reset';

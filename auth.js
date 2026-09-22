@@ -102,6 +102,35 @@
           }
           current.status.textContent = `${authorizedMessage} Google Sheets conectado.`;
           authorized = true;
+          current.onTarjetasReader?.(async signal => {
+            if (!authorized || !credential || attempt !== generation || view !== current) throw new Error('Unavailable');
+            const read = new AbortController();
+            const abort = () => read.abort();
+            signal?.addEventListener('abort', abort, { once: true });
+            if (signal?.aborted) read.abort();
+            reads.add(read);
+            const deadline = setTimeout(abort, 12000);
+            try {
+              read.signal.throwIfAborted();
+              const response = await fetch(new URL('/api/tarjetas-credito', authEndpoint()).href, {
+                method: 'GET', headers: { Authorization: `Bearer ${credential}` },
+                credentials: 'omit', cache: 'no-store', redirect: 'error', signal: read.signal });
+              if (attempt !== generation || view !== current || read.signal.aborted) throw new Error('Unavailable');
+              if (response.status === 401 || response.status === 403) {
+                clearCredential();
+                current.button.hidden = !navigator.onLine;
+                current.status.textContent = 'Vuelve a iniciar sesión con Google.';
+              }
+              if (response.status !== 200) throw new Error('Unavailable');
+              const data = await response.json();
+              if (attempt !== generation || view !== current || read.signal.aborted) throw new Error('Unavailable');
+              return data;
+            } finally {
+              clearTimeout(deadline);
+              signal?.removeEventListener('abort', abort);
+              reads.delete(read);
+            }
+          });
           current.onTurnosReader?.(async (from, to, signal) => {
             if (!authorized || !credential || attempt !== generation || view !== current) throw new Error('Unavailable');
             const read = new AbortController();
@@ -245,9 +274,9 @@
     }
   }
 
-  function mount({ button, status, retry, clear, onDashboard, onTurnosReader }) {
+  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader }) {
     clearCredential();
-    const current = { button, status, retry, clear, onDashboard, onTurnosReader };
+    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader };
     view = current;
     clear.hidden = true;
     retry.onclick = () => prepare(current);

@@ -4,14 +4,41 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+test('Finance switches between movements and credit without losing dashboard; logout clears credit', () => {
+  const nodes = new Map();
+  const get = key => {
+    if (!nodes.has(key)) nodes.set(key, { hidden: false, innerHTML: '', focus() {}, setAttribute(name, value) { this[name] = value; } });
+    return nodes.get(key);
+  };
+  let opened = 0, reset = 0, reader;
+  const root = { innerHTML: '', querySelector: get };
+  const window = { scrollTo() {}, JarvisRutinas: { mount: () => ({ reset() {}, open() {}, setReader() {} }) },
+    JarvisTarjetas: { mount: () => ({ open() { opened++; }, reset() { reset++; }, setReader(value) { reader = value; } }) },
+    JarvisDashboard: { render(node, state) { node.innerHTML = state === 'reset' ? '' : state; } } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
+  const navigation = window.JarvisNavigation.mount(root, () => {});
+  const read = () => {}; navigation.setTarjetasReader(read); assert.equal(reader, read);
+  get('#finance-tarjetas').onclick(); assert.equal(opened, 0);
+  navigation.update('loading'); get('#module-finanzas').onclick();
+  assert.equal(opened, 0);
+  get('#finance-tarjetas').onclick(); assert.equal(opened, 1);
+  assert.equal(get('#credit-data').hidden, false); assert.equal(get('#dashboard-data').hidden, true);
+  assert.equal(get('#finance-tarjetas')['aria-pressed'], 'true');
+  navigation.update('loaded'); assert.equal(get('#credit-data').hidden, false);
+  get('#finance-movimientos').onclick(); assert.equal(get('#dashboard-data').innerHTML, 'loaded');
+  assert.equal(get('#dashboard-data').hidden, false); assert.equal(get('#credit-data').hidden, true);
+  navigation.update('reset'); assert.equal(reset, 1);
+  assert.equal(get('#credit-data').hidden, true);
+});
+
 test('authorized login enters Home, Finance and back preserve identity, logout discards it', () => {
   const elements = new Map();
   const element = selector => {
-    if (!elements.has(selector)) elements.set(selector, { hidden: false, innerHTML: '', focus() {}, querySelector: element });
+    if (!elements.has(selector)) elements.set(selector, { hidden: false, innerHTML: '', focus() {}, setAttribute(name, value) { this[name] = value; }, querySelector: element });
     return elements.get(selector);
   };
   let options, disposed = 0, mounts = 0;
-  const window = { scrollTo() {}, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(root, state) { root.innerHTML = state === 'reset' ? '' : state; } },
+  const window = { scrollTo() {}, JarvisTarjetas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(root, state) { root.innerHTML = state === 'reset' ? '' : state; } },
     JarvisAuth: { mount(input) { mounts++; options = input; return () => { disposed++; input.onDashboard('reset'); }; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8'), {
@@ -58,11 +85,11 @@ test('authorized login enters Home, Finance and back preserve identity, logout d
 test('future modules are disabled and completion or error stays in the selected view', () => {
   const nodes = new Map();
   const get = key => {
-    if (!nodes.has(key)) nodes.set(key, { hidden: false, focus() {}, innerHTML: '' });
+    if (!nodes.has(key)) nodes.set(key, { hidden: false, focus() {}, setAttribute(name, value) { this[name] = value; }, innerHTML: '' });
     return nodes.get(key);
   };
   const root = { hidden: true, innerHTML: '', querySelector: get };
-  const window = { scrollTo() {}, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(content, state) { content.innerHTML = state === 'reset' ? '' : state; } } };
+  const window = { scrollTo() {}, JarvisTarjetas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(content, state) { content.innerHTML = state === 'reset' ? '' : state; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
   const navigation = window.JarvisNavigation.mount(root, () => {});
   for (const id of ['casa', 'inversiones']) {

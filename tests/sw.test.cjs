@@ -44,7 +44,7 @@ test('static shell remains available offline under the Pages base, including ent
 
 test('API, other origins, unknown routes and mutations bypass the static cache', () => {
   const { dispatch, hits } = worker();
-  for (const url of [base + 'api/turnos?from=2032-01-01&to=2032-01-31', base + 'api/balance', base + 'api/dashboard', base + 'auth/me', base + 'unknown',
+  for (const url of [base + 'api/turnos?from=2032-01-01&to=2032-01-31', base + 'api/balance', base + 'api/dashboard', base + 'api/tarjetas-credito', base + 'auth/me', base + 'unknown',
     'https://api.example.test/auth/me', 'https://accounts.google.com/gsi/client',
     'https://accounts.google.com/gsi/client?hl=es',
     'https://luigytc.github.io/another-project/']) {
@@ -68,7 +68,7 @@ test('Authorization and no-store bypass even static assets and entry navigations
 
 test('update reloads configuration and removes the previous app cache on activation', async () => {
   const handlers = {};
-  const oldCache = 'jarvislifetracker:/JarvisLifeTracker/:2.3.12';
+  const oldCache = 'jarvislifetracker:/JarvisLifeTracker/:2.3.13';
   const unrelated = 'jarvislifetracker:/another-project/:2.3.1';
   const stored = new Map([[oldCache, new Map()], [unrelated, new Map()]]);
   let installedCache;
@@ -105,8 +105,10 @@ test('update reloads configuration and removes the previous app cache on activat
   handlers.install({ waitUntil: promise => { pending = promise; } });
   await pending;
   assert.notEqual(installedCache, oldCache);
-  assert.equal(installedCache, 'jarvislifetracker:/JarvisLifeTracker/:2.3.13');
+  assert.equal(installedCache, 'jarvislifetracker:/JarvisLifeTracker/:2.3.14');
   assert.ok(requests.some(request => request.url === base + 'config.js'));
+  assert.ok(requests.some(request => request.url === base + 'tarjetas-credito.js'));
+  assert.ok(requests.every(request => !new URL(request.url).pathname.includes('/api/')));
   assert.ok(requests.every(request => request.cache === 'reload'));
   handlers.activate({ waitUntil: promise => { pending = promise; } });
   await pending;

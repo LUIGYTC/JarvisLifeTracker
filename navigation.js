@@ -10,6 +10,7 @@
   function mount(root, onExit) {
     let active = false;
     let current = 'home';
+    let financeSection = 'movimientos';
     root.innerHTML = `<nav class="dashboard-nav shell" aria-label="Navegación de Jarvis">
       <strong>JARVIS</strong><button class="demo-button" id="close-session" type="button">Cerrar sesión</button></nav>
       <main id="jarvis-home" class="shell jarvis-home" tabindex="-1">
@@ -20,13 +21,28 @@
           <span class="module-state">${module.active ? 'Abrir módulo →' : 'Próximamente'}</span></button>`).join('')}</section>
       </main><section id="finance-view" hidden aria-label="Finanzas">
         <div class="shell finance-navigation"><button id="back-home" type="button" class="demo-button">← Volver a Jarvis</button></div>
-        <div id="dashboard-data" tabindex="-1"></div></section><section id="rutinas-view" hidden aria-label="Rutinas"><div class="shell finance-navigation"><button id="rutinas-back" type="button" class="demo-button">&#8592; Volver a Jarvis</button></div><div id="rutinas-content" class="shell routines" tabindex="-1"></div></section>`;
+        <div class="shell finance-tabs" role="group" aria-label="Vistas de Finanzas"><button id="finance-movimientos" type="button" aria-pressed="true" aria-controls="dashboard-data">Movimientos</button><button id="finance-tarjetas" type="button" aria-pressed="false" aria-controls="credit-data">Tarjetas de crédito</button></div>
+        <div id="dashboard-data" tabindex="-1"></div><div id="credit-data" tabindex="-1" hidden></div></section><section id="rutinas-view" hidden aria-label="Rutinas"><div class="shell finance-navigation"><button id="rutinas-back" type="button" class="demo-button">&#8592; Volver a Jarvis</button></div><div id="rutinas-content" class="shell routines" tabindex="-1"></div></section>`;
     const home = root.querySelector('#jarvis-home');
     const finance = root.querySelector('#finance-view');
     const content = root.querySelector('#dashboard-data');
+    const creditContent = root.querySelector('#credit-data');
+    const credit = window.JarvisTarjetas.mount(creditContent);
+    const movementButton = root.querySelector('#finance-movimientos');
+    const creditButton = root.querySelector('#finance-tarjetas');
     const routines = root.querySelector('#rutinas-view');
     const routineContent = root.querySelector('#rutinas-content');
     const calendar = window.JarvisRutinas.mount(routineContent);
+    function showFinance(section) {
+      financeSection = section;
+      content.hidden = section !== 'movimientos';
+      creditContent.hidden = section !== 'tarjetas';
+      movementButton.setAttribute('aria-pressed', String(section === 'movimientos'));
+      creditButton.setAttribute('aria-pressed', String(section === 'tarjetas'));
+      if (active && section === 'tarjetas') credit.open();
+    }
+    movementButton.onclick = () => { if (active) showFinance('movimientos'); };
+    creditButton.onclick = () => { if (active) showFinance('tarjetas'); };
     function show(view) {
       if (!active || !['home', 'finanzas', 'rutinas'].includes(view)) return;
       current = view;
@@ -34,8 +50,9 @@
       finance.hidden = view !== 'finanzas';
       routines.hidden = view !== 'rutinas';
       if (view === 'rutinas') calendar.open();
+      if (view === 'finanzas') showFinance(financeSection);
       window.scrollTo(0, 0);
-      (view === 'home' ? home : view === 'rutinas' ? routineContent : content).focus({ preventScroll: true });
+      (view === 'home' ? home : view === 'rutinas' ? routineContent : financeSection === 'tarjetas' ? creditContent : content).focus({ preventScroll: true });
     }
     root.querySelector('#module-finanzas').onclick = () => show('finanzas');
     root.querySelector('#module-rutinas').onclick = () => show('rutinas');
@@ -44,6 +61,7 @@
     root.querySelector('#close-session').onclick = onExit;
     return Object.freeze({
       setTurnosReader(reader) { calendar.setReader(reader); },
+      setTarjetasReader(reader) { credit.setReader(reader); },
       update(state, data) {
         window.JarvisDashboard.render(content, state, data);
         if (state === 'reset') {
@@ -53,6 +71,8 @@
           finance.hidden = true;
           routines.hidden = true;
           calendar.reset();
+          credit.reset();
+          showFinance('movimientos');
           home.hidden = false;
           return;
         }
@@ -61,7 +81,7 @@
         root.hidden = false;
         if (entering) show('home');
         // Loading completion does not move someone away from their chosen module.
-        else if (current === 'finanzas' && state === 'loaded') content.focus({ preventScroll: true });
+        else if (current === 'finanzas' && financeSection === 'movimientos' && state === 'loaded') content.focus({ preventScroll: true });
       }
     });
   }
