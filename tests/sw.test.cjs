@@ -66,6 +66,14 @@ test('Authorization and no-store bypass even static assets and entry navigations
   assert.deepEqual(hits, []);
 });
 
+test('commitment processing never enters the service worker cache', () => {
+  const { dispatch, hits } = worker();
+  for (const url of [base + 'api/compromisos/procesar', 'https://api.example.test/api/compromisos/procesar']) {
+    for (const method of ['POST', 'GET']) assert.equal(dispatch(url, { method }), undefined);
+  }
+  assert.deepEqual(hits, []);
+});
+
 test('update reloads configuration and removes the previous app cache on activation', async () => {
   const handlers = {};
   const oldCache = 'jarvislifetracker:/JarvisLifeTracker/:2.3.17';

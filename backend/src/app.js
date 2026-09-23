@@ -12,6 +12,7 @@ import { createMSIReader } from './compras-msi.js';
 import { createNextCutReader } from './proximo-corte.js';
 import { createTurnosReader, shiftRange } from './turnos.js';
 import { createMovementWriter } from './sheets-write.js';
+import { createCommitmentProcessor } from './compromisos.js';
 import { movimientoRow, readMovementBody } from './movimientos.js';
 
 export function reply(res, status, body) {
@@ -32,6 +33,7 @@ export function bearerToken(req) {
 
 export function createApp({ fortnightAnchor = '', readFreeMoney = createFreeMoneyReader({ anchor: fortnightAnchor }), authorizedSub = '', verify = createVerifier(), verificationTimeoutMs = 10000,
   checkSheets = createSheetsCheck(), writeMovement = createMovementWriter(), readDashboard = createDashboardReader(), readTurnos = createTurnosReader(),
+  processCommitments = createCommitmentProcessor({ writeMovement }),
   readTarjetas = createTarjetasReader(), readCardMovements = createCardMovementsReader(), readMSI = createMSIReader(),
   readAvailableMoney = createAvailableMoneyReader(), readCardExpenses = createCardExpensesReader({ readTarjetas }), readNextCut = createNextCutReader({ readMSI }) } = {}) {
   const server = http.createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000 }, async (req, res) => {
@@ -46,7 +48,7 @@ export function createApp({ fortnightAnchor = '', readFreeMoney = createFreeMone
       const cardMovementsRoute = req.url.split('?')[0] === '/api/tarjetas-credito/movimientos';
       const msiRoute = req.url.split('?')[0] === '/api/tarjetas-credito/msi';
       const nextCutRoute = req.url.split('?')[0] === '/api/tarjetas-credito/proximo-corte';
-      const method = turnosRoute || cardMovementsRoute || msiRoute || nextCutRoute ? 'GET' : ['/auth/me', '/api/movimientos'].includes(req.url) ? 'POST'
+      const method = turnosRoute || cardMovementsRoute || msiRoute || nextCutRoute ? 'GET' : ['/auth/me', '/api/movimientos', '/api/compromisos/procesar'].includes(req.url) ? 'POST'
         : ['/api/dinero-libre', '/api/dinero-disponible', '/health', '/api/sheets/status', '/api/dashboard', '/api/tarjetas-credito', '/api/gastos-tarjetas'].includes(req.url) ? 'GET' : null;
       if (!method) return reply(res, 404, { error: 'not_found' });
       if (req.method === 'OPTIONS') {
@@ -87,6 +89,14 @@ export function createApp({ fortnightAnchor = '', readFreeMoney = createFreeMone
       }
       if (!authorizedSub) return reply(res, 503, { error: 'authorization_unavailable' });
       if (sub !== authorizedSub) return reply(res, 403, { error: 'not_authorized' });
+      if (req.url === '/api/compromisos/procesar') {
+        try { return reply(res, 200, await processCommitments()); }
+        catch (error) {
+          return error.code === 'PROCESSOR_BUSY'
+            ? reply(res, 409, { error: 'commitments_busy' })
+            : reply(res, 503, { error: 'commitments_unavailable' });
+        }
+      }
       if (turnosRoute) {
         let range;
         try { range = shiftRange(new URL(req.url, 'http://localhost').searchParams); }
