@@ -14,6 +14,7 @@ export function readConfig(env = process.env) {
   return {
     port,
     host: env.NODE_ENV === 'production' || env.K_SERVICE ? '0.0.0.0' : (env.HOST || '127.0.0.1'),
+    fortnightAnchor: env.FORTNIGHT_ANCHOR?.trim() || '',
     authorizedSub: env.AUTHORIZED_GOOGLE_SUB?.trim() || ''
   };
 }

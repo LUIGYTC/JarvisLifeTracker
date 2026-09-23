@@ -249,7 +249,7 @@ test('temporary write UI and fixed payload are absent from frontend assets', () 
   }
 });
 
-function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader, onAvailableMoneyReader } = {}) {
+function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http://localhost:8000', useConfig = false, fetchImpl, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader, onAvailableMoneyReader, onFreeMoneyReader } = {}) {
   const events = {};
   const scripts = [];
   const timers = new Map();
@@ -282,7 +282,7 @@ function harness({ online = true, loaded = true, apiBaseUrl = '', origin = 'http
   function mount() {
     const elements = Object.fromEntries(['button', 'status', 'retry', 'clear'].map(key =>
       [key, { hidden: false, textContent: '', clientWidth: 260, replaceChildren() {} }]));
-    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader, onAvailableMoneyReader });
+    const dispose = window.JarvisAuth.mount({ ...elements, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader, onAvailableMoneyReader, onFreeMoneyReader });
     return { ...elements, dispose };
   }
   return { window, navigator, events, scripts, timers, calls, id, mount };
@@ -755,6 +755,79 @@ test('late available money responses or JSON cannot return private data after lo
   for (const stage of ['fetch', 'json']) {
     let reader, resolveLate;
     const h = harness({ apiBaseUrl: 'https://api.example.test', onAvailableMoneyReader: value => { reader = value; }, fetchImpl: async url => {
+      if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+      if (stage === 'fetch') return new Promise(resolve => { resolveLate = resolve; });
+      return { status: 200, json: () => new Promise(resolve => { resolveLate = resolve; }) };
+    } });
+    const ui = h.mount(); await settle(); h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    const pending = assert.rejects(reader()); await settle(); ui.dispose();
+    resolveLate(stage === 'fetch' ? { status: 200, json: async () => ({ total: 0, cuentas: [] }) } : { total: 0, cuentas: [] });
+    await pending;
+  }
+});
+
+test('free money reader is published only after authorization and reads the fixed API without persistence', async () => {
+  let reader, status = 200;
+  const paths = [];
+  const h = harness({ apiBaseUrl: 'https://api.example.test', onFreeMoneyReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+    const path = new URL(url).pathname; paths.push(path);
+    assert.equal(options.headers.Authorization, 'Bearer synthetic-test-value');
+    assert.equal(options.credentials, 'omit'); assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error');
+    return { status: path === '/api/dinero-libre' ? status : 200, json: async () => path === '/auth/me'
+      ? { authenticated: true, authorized: true } : path === '/api/sheets/status' ? { connected: true } : { total: 0, cuentas: [] } };
+  } });
+  const ui = h.mount(); await settle(); assert.equal(reader, undefined);
+  h.calls.button.click_listener(); await h.calls.config.callback({ credential: 'synthetic-test-value' });
+  assert.deepEqual(paths, ['/auth/me', '/api/sheets/status']);
+  assert.deepEqual(await reader(), { total: 0, cuentas: [] });
+  assert.equal(paths.at(-1), '/api/dinero-libre');
+  status = 403; await assert.rejects(reader());
+  const count = paths.length; await assert.rejects(reader()); assert.equal(paths.length, count);
+  assert.match(ui.status.textContent, /Vuelve a iniciar/);
+});
+
+test('free money reader is never available after denied identity or failed Sheets connectivity', async () => {
+  for (const failure of ['/auth/me', '/api/sheets/status']) {
+    let reader;
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onFreeMoneyReader: value => { reader = value; }, fetchImpl: async url => ({
+      status: url.endsWith(failure) ? 403 : 200,
+      json: async () => ({ authenticated: true, authorized: true })
+    }) });
+    h.mount(); await settle(); h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    assert.equal(reader, undefined);
+  }
+});
+
+test('free money reads abort on discard, offline, pagehide, disposal, caller cancellation and timeout', async () => {
+  for (const action of ['discard', 'offline', 'pagehide', 'dispose', 'caller', 'timeout']) {
+    let reader, signal, calls = 0;
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onFreeMoneyReader: value => { reader = value; }, fetchImpl: async (url, options) => {
+      if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
+      if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
+      calls++; signal = options.signal;
+      return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+    } });
+    const ui = h.mount(); await settle(); h.calls.button.click_listener();
+    await h.calls.config.callback({ credential: 'synthetic-test-value' });
+    const controller = new AbortController();
+    const pending = assert.rejects(reader(controller.signal));
+    if (action === 'discard') ui.clear.onclick();
+    if (action === 'offline') h.events.offline();
+    if (action === 'pagehide') h.events.pagehide();
+    if (action === 'dispose') ui.dispose();
+    if (action === 'caller') controller.abort();
+    if (action === 'timeout') [...h.timers.values()][0]();
+    await pending; assert.equal(signal.aborted, true); assert.equal(calls, 1);
+  }
+});
+
+test('late free money responses or JSON cannot return private data after logout', async () => {
+  for (const stage of ['fetch', 'json']) {
+    let reader, resolveLate;
+    const h = harness({ apiBaseUrl: 'https://api.example.test', onFreeMoneyReader: value => { reader = value; }, fetchImpl: async url => {
       if (url.endsWith('/auth/me')) return { status: 200, json: async () => ({ authenticated: true, authorized: true }) };
       if (url.endsWith('/api/sheets/status')) return { status: 200, json: async () => ({ connected: true }) };
       if (stage === 'fetch') return new Promise(resolve => { resolveLate = resolve; });

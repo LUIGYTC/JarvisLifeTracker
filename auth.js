@@ -131,6 +131,7 @@
               reads.delete(read);
             }
           };
+          current.onFreeMoneyReader?.(signal => readCredit('/api/dinero-libre', signal));
           current.onAvailableMoneyReader?.(signal => readCredit('/api/dinero-disponible', signal));
           current.onCardExpensesReader?.(signal => readCredit('/api/gastos-tarjetas', signal));
           current.onTarjetasReader?.(signal => readCredit('/api/tarjetas-credito', signal));
@@ -283,9 +284,9 @@
     }
   }
 
-  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader, onAvailableMoneyReader }) {
+  function mount({ button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader, onAvailableMoneyReader, onFreeMoneyReader }) {
     clearCredential();
-    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader, onAvailableMoneyReader };
+    const current = { button, status, retry, clear, onDashboard, onTurnosReader, onTarjetasReader, onTarjetaMovimientosReader, onMSIReader, onNextCutReader, onCardExpensesReader, onAvailableMoneyReader, onFreeMoneyReader };
     view = current;
     clear.hidden = true;
     retry.onclick = () => prepare(current);
