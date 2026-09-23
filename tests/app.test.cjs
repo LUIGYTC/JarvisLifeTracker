@@ -4,6 +4,35 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+test('available money loads on Finance entry, refreshes on return, survives dashboard errors and clears on logout', async () => {
+  const nodes = new Map();
+  const get = key => {
+    if (!nodes.has(key)) nodes.set(key, { hidden: false, innerHTML: '', focus() {}, setAttribute(name, value) { this[name] = value; } });
+    return nodes.get(key);
+  };
+  const window = { scrollTo() {}, JarvisRutinas: { mount: () => ({ open() {}, reset() {} }) },
+    JarvisTarjetas: { mount: () => ({ open() {}, reset() {} }) },
+    JarvisCardExpenses: { mount: () => ({ open() {}, reset() {} }) },
+    JarvisDashboard: { render(node, state) { node.innerHTML = state; } } };
+  for (const file of ['dinero-disponible.js', 'navigation.js']) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), { window, AbortController, Intl });
+  const navigation = window.JarvisNavigation.mount({ innerHTML: '', querySelector: get }, () => {});
+  let calls = 0;
+  navigation.setAvailableMoneyReader(async () => ({ total: ++calls, cuentas: [{ nombre: 'Cuenta nueva', saldo: calls }] }));
+  get('#module-finanzas').onclick(); assert.equal(calls, 0);
+  navigation.update('loading'); assert.equal(calls, 0);
+  get('#module-finanzas').onclick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1); assert.match(get('#available-data').innerHTML, /Cuenta nueva/);
+  navigation.update('error'); assert.match(get('#available-data').innerHTML, /\$1.00/);
+  assert.equal(get('#dashboard-data').innerHTML, 'error');
+  get('#finance-tarjetas').onclick(); assert.equal(get('#available-data').hidden, true);
+  get('#finance-expenses').onclick(); assert.equal(get('#available-data').hidden, true);
+  get('#finance-movimientos').onclick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(get('#available-data').hidden, false); assert.equal(calls, 2);
+  assert.match(get('#available-data').innerHTML, /\$2.00/);
+  navigation.update('reset'); assert.equal(get('#available-data').innerHTML, '');
+  get('#module-finanzas').onclick(); assert.equal(calls, 2);
+});
+
 test('global card expenses navigation loads authenticated reader, preserves other views and clears on logout', async () => {
   const nodes = new Map();
   const get = key => {
@@ -13,7 +42,7 @@ test('global card expenses navigation loads authenticated reader, preserves othe
   const window = { scrollTo() {}, JarvisRutinas: { mount: () => ({ open() {}, reset() {} }) },
     JarvisTarjetas: { mount: () => ({ open() {}, reset() {} }) },
     JarvisDashboard: { render(node, state) { node.innerHTML = state; } } };
-  for (const file of ['gastos-tarjetas.js', 'navigation.js']) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), { window, AbortController, Intl });
+  for (const file of ['dinero-disponible.js', 'gastos-tarjetas.js', 'navigation.js']) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), { window, AbortController, Intl });
   const navigation = window.JarvisNavigation.mount({ innerHTML: '', querySelector: get }, () => {});
   let calls = 0;
   navigation.setCardExpensesReader(async () => { calls++; return { inicioPeriodo: '2036-02-01', finPeriodo: '2036-02-12', total: 0, numeroCompras: 0, categorias: [] }; });
@@ -38,7 +67,7 @@ test('Finance switches between movements and credit without losing dashboard; lo
   };
   let opened = 0, reset = 0, reader;
   const root = { innerHTML: '', querySelector: get };
-  const window = { JarvisCardExpenses: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, scrollTo() {}, JarvisRutinas: { mount: () => ({ reset() {}, open() {}, setReader() {} }) },
+  const window = { JarvisAvailableMoney: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, JarvisCardExpenses: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, scrollTo() {}, JarvisRutinas: { mount: () => ({ reset() {}, open() {}, setReader() {} }) },
     JarvisTarjetas: { mount: () => ({ open() { opened++; }, reset() { reset++; }, setReader(value) { reader = value; } }) },
     JarvisDashboard: { render(node, state) { node.innerHTML = state === 'reset' ? '' : state; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
@@ -64,7 +93,7 @@ test('authorized login enters Home, Finance and back preserve identity, logout d
     return elements.get(selector);
   };
   let options, disposed = 0, mounts = 0;
-  const window = { JarvisCardExpenses: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, scrollTo() {}, JarvisTarjetas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(root, state) { root.innerHTML = state === 'reset' ? '' : state; } },
+  const window = { JarvisAvailableMoney: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, JarvisCardExpenses: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, scrollTo() {}, JarvisTarjetas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(root, state) { root.innerHTML = state === 'reset' ? '' : state; } },
     JarvisAuth: { mount(input) { mounts++; options = input; return () => { disposed++; input.onDashboard('reset'); }; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8'), {
@@ -115,7 +144,7 @@ test('future modules are disabled and completion or error stays in the selected 
     return nodes.get(key);
   };
   const root = { hidden: true, innerHTML: '', querySelector: get };
-  const window = { JarvisCardExpenses: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, scrollTo() {}, JarvisTarjetas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(content, state) { content.innerHTML = state === 'reset' ? '' : state; } } };
+  const window = { JarvisAvailableMoney: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, JarvisCardExpenses: { mount: () => ({ open() {}, reset() {}, setReader() {} }) }, scrollTo() {}, JarvisTarjetas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisRutinas: { mount() { return { reset() {}, open() {}, setReader() {} }; } }, JarvisDashboard: { render(content, state) { content.innerHTML = state === 'reset' ? '' : state; } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../navigation.js'), 'utf8'), { window });
   const navigation = window.JarvisNavigation.mount(root, () => {});
   for (const id of ['casa', 'inversiones']) {

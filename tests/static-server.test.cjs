@@ -18,7 +18,7 @@ test('frontend server serves public assets but never backend, env or dependencie
       if (match) resolve(match[0]);
     });
   });
-  for (const route of ['/', '/auth.js', '/dashboard.js', '/gastos-tarjetas.js', '/tarjetas-credito.js', '/navigation.js', '/rutinas.js', '/descanso.js', '/config.js', '/sw.js', '/manifest.webmanifest']) {
+  for (const route of ['/', '/auth.js', '/dashboard.js', '/dinero-disponible.js', '/gastos-tarjetas.js', '/tarjetas-credito.js', '/navigation.js', '/rutinas.js', '/descanso.js', '/config.js', '/sw.js', '/manifest.webmanifest']) {
     assert.equal((await fetch(url + route)).status, 200);
   }
   for (const route of ['/backend/.env', '/backend/src/server.js', '/backend/package.json',

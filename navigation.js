@@ -22,9 +22,11 @@
       </main><section id="finance-view" hidden aria-label="Finanzas">
         <div class="shell finance-navigation"><button id="back-home" type="button" class="demo-button">← Volver a Jarvis</button></div>
         <div class="shell finance-tabs" role="group" aria-label="Vistas de Finanzas"><button id="finance-movimientos" type="button" aria-pressed="true" aria-controls="dashboard-data">Movimientos</button><button id="finance-tarjetas" type="button" aria-pressed="false" aria-controls="credit-data">Tarjetas de crédito</button><button id="finance-expenses" type="button" aria-pressed="false" aria-controls="expenses-data">Gastos con tarjetas</button></div>
-        <div id="expenses-data" tabindex="-1" hidden></div><div id="dashboard-data" tabindex="-1"></div><div id="credit-data" tabindex="-1" hidden></div></section><section id="rutinas-view" hidden aria-label="Rutinas"><div class="shell finance-navigation"><button id="rutinas-back" type="button" class="demo-button">&#8592; Volver a Jarvis</button></div><div id="rutinas-content" class="shell routines" tabindex="-1"></div></section>`;
+        <div id="available-data"></div><div id="expenses-data" tabindex="-1" hidden></div><div id="dashboard-data" tabindex="-1"></div><div id="credit-data" tabindex="-1" hidden></div></section><section id="rutinas-view" hidden aria-label="Rutinas"><div class="shell finance-navigation"><button id="rutinas-back" type="button" class="demo-button">&#8592; Volver a Jarvis</button></div><div id="rutinas-content" class="shell routines" tabindex="-1"></div></section>`;
     const home = root.querySelector('#jarvis-home');
     const finance = root.querySelector('#finance-view');
+    const availableContent = root.querySelector('#available-data');
+    const available = window.JarvisAvailableMoney.mount(availableContent);
     const content = root.querySelector('#dashboard-data');
     const creditContent = root.querySelector('#credit-data');
     const credit = window.JarvisTarjetas.mount(creditContent);
@@ -38,6 +40,8 @@
     const calendar = window.JarvisRutinas.mount(routineContent);
     function showFinance(section) {
       financeSection = section;
+      availableContent.hidden = section !== 'movimientos';
+      if (active && section === 'movimientos') available.open();
       expensesContent.hidden = section !== 'expenses';
       expensesButton.setAttribute('aria-pressed', String(section === 'expenses'));
       if (active && section === 'expenses') expenses.open();
@@ -67,6 +71,7 @@
     root.querySelector('#back-home').onclick = () => show('home');
     root.querySelector('#close-session').onclick = onExit;
     return Object.freeze({
+      setAvailableMoneyReader(reader) { available.setReader(reader); },
       setCardExpensesReader(reader) { expenses.setReader(reader); },
       setTurnosReader(reader) { calendar.setReader(reader); },
       setTarjetasReader(reader) { credit.setReader(reader); },
@@ -84,6 +89,7 @@
           calendar.reset();
           credit.reset();
           expenses.reset();
+          available.reset();
           showFinance('movimientos');
           home.hidden = false;
           return;
