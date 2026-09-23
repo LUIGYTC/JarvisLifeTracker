@@ -8,11 +8,17 @@ import { createApp } from '../src/app.js';
 import { SPREADSHEET_ID } from '../src/config.js';
 const name = 'Tarjeta sintética Corte';
 const card = { tarjeta: name, diaCorte: 17, utilizado: 987.65 };
-const header = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método'];
+const header = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método', 'Destino'];
 const msiHeader = ['Compra', 'Tarjeta', 'Mensualidad', 'Mes actual', 'Meses totales', 'Próximo corte', 'Estado', 'Nota'];
 const move = (fecha, monto = 11.11, tipo = 'Gasto', metodo = name) => [fecha, '12:00', tipo, 'Prueba', monto, 'Movimiento sintético', metodo];
 const purchase = (fecha, mensualidad = 3.33, tarjeta = name, estado = 'Activo') => ['Artículo sintético', tarjeta, mensualidad, 2, 6, fecha, estado, 'private-note'];
 const period = cutPeriod(17, '2034-06-08');
+
+test('new internal movement types do not change next cut purchase calculations', () => {
+  assert.equal(periodExpenses([header, move('2034-06-01'),
+    [...move('2034-06-01', 80, 'Transferencia'), 'Otra cuenta'],
+    [...move('2034-06-01', 80, 'Pago tarjeta', 'Cuenta origen'), name]], name, period), 11.11);
+});
 
 test('next cut includes today and begins the day after the previous cut, including month/year rollover', () => {
   assert.deepEqual(period, { fechaCorte: '2034-06-17', inicioPeriodo: '2034-05-18', finPeriodo: '2034-06-17' });
@@ -84,8 +90,8 @@ test('next cut reads the real fixed sources afresh each query, never snapshot de
     const path = decodeURIComponent(url.pathname); paths.push(path);
     assert.equal(request.method, 'GET'); assert.equal(request.cache, 'no-store'); assert.equal(request.redirect, 'error');
     const root = `/v4/spreadsheets/${SPREADSHEET_ID}/values/`;
-    assert.ok([root + "'Movimientos'!A:G", root + "'ComprasMSI'!A:H"].includes(path));
-    return { status: 200, json: async () => ({ values: path.endsWith("'Movimientos'!A:G") ? rows : [msiHeader, purchase(period.fechaCorte)] }) };
+    assert.ok([root + "'Movimientos'!A:H", root + "'ComprasMSI'!A:H"].includes(path));
+    return { status: 200, json: async () => ({ values: path.endsWith("'Movimientos'!A:H") ? rows : [msiHeader, purchase(period.fechaCorte)] }) };
   } };
   const reader = createNextCutReader({ now: () => new Date('2034-06-08T18:00:00Z'), readMSI: createMSIReader(options),
     readExpenses: (name, period) => createDashboardReader({ ...options, aggregate: values => periodExpenses(values, name, period) })() });

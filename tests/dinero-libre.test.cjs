@@ -15,6 +15,15 @@ function setup() {
   vm.runInNewContext(source, { window, Intl, AbortController, localStorage: blocked, sessionStorage: blocked, indexedDB: blocked, caches: blocked, console: blocked });
   return { root, view: window.JarvisFreeMoney.mount(root) };
 }
+test('current commitments are informational and escaped, with no deduction sign or automatic payment controls', async () => {
+  const { root, view } = setup();
+  view.setReader(async () => ({ ...incomplete, compromisos: [], cortes: [], cortesPendientes: 0,
+    pendientes: [{ nombre: '', codigo: 'compromisos_solo_lectura' }], compromisosInformativos: [{ nombre: 'Servicio <nuevo>', tipo: 'Gasto fijo',
+      monto: 123, frecuencia: 'Mensual', proximaFechaPago: '2034-04-15', metodo: null, estado: 'Activo' }] }));
+  await view.open();
+  for (const text of ['Compromisos · solo consulta', 'Servicio &lt;nuevo&gt;', 'Próximo pago: 2034-04-15', '$123.00', 'no se apartan ni ejecutan automáticamente']) assert.ok(root.innerHTML.includes(text));
+  assert.doesNotMatch(root.innerHTML, /−\$123|<nuevo>|Descuentos confirmados/);
+});
 test('free money is primary, gross remains labeled, deductions and dynamic escaped breakdown render in MXN', async () => {
   const { root, view } = setup(); view.setReader(async () => data); await view.open();
   assert.match(root.innerHTML, /class="free-total">\$700.00/);

@@ -59,7 +59,7 @@
         <div><dt>Día de corte</dt><dd>${card.diaCorte ?? 'Sin registrar'}</dd></div>
         ${card.fechaLimitePago ? `<div><dt>Fecha límite de pago</dt><dd>${showDate(card.fechaLimitePago)}</dd></div>` : ''}
         ${card.domiciliadaA ? `<div><dt>Domiciliada a</dt><dd>${escape(card.domiciliadaA)}</dd></div>` : ''}
-        <div><dt>Última actualización</dt><dd>${showDate(card.ultimaActualizacion)}</dd></div></dl></section>
+        <div><dt>Fecha base</dt><dd>${showDate(card.ultimaActualizacion)}</dd></div></dl></section>
       <section class="card section credit-msi"><h2>MSI activos</h2><div aria-live="polite" data-credit-msi>${msiBody}</div></section>
       <section class="card section credit-movements"><h2>Movimientos recientes</h2><div aria-live="polite" data-credit-movements>${body}</div></section></div>`;
   }
@@ -95,7 +95,7 @@
   function movements(data, tarjeta) {
     if (data?.tarjeta !== tarjeta || !Array.isArray(data.movimientos) || data.movimientos.length > 10) throw new Error('Invalid movements');
     for (const item of data.movimientos) {
-      if (!item || !['Ingreso', 'Gasto'].includes(item.tipo) || !validMoney(item.monto) || item.monto <= 0 ||
+      if (!item || !['Ingreso', 'Gasto', 'Transferencia', 'Pago tarjeta'].includes(item.tipo) || !validMoney(item.monto) || item.monto <= 0 ||
           typeof item.descripcion !== 'string' || typeof item.categoria !== 'string' ||
           typeof item.fecha !== 'string' || !/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(item.fecha) ||
           !Number.isFinite(Date.parse(item.fecha)) || new Date(item.fecha).toISOString().slice(0, 10) !== item.fecha) throw new Error('Invalid movements');

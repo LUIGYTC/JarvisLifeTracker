@@ -69,8 +69,8 @@ export function createMovementWriter({
           signal: controller.signal, redirect: 'error', cache: 'no-store' });
         if (response.status !== 200) throw new Error('Write failed');
         const { updates } = await response.json();
-        const range = /^'?Movimientos'?!A([1-9]\d*):I([1-9]\d*)$/.exec(updates?.updatedRange || '');
-        if (updates?.updatedRows !== 1 || updates.updatedColumns !== 9 || updates.updatedCells !== 9 ||
+        const range = /^'?Movimientos'?!A([1-9]\d*):J([1-9]\d*)$/.exec(updates?.updatedRange || '');
+        if (updates?.updatedRows !== 1 || updates.updatedColumns !== 10 || updates.updatedCells !== 10 ||
             !range || range[1] !== range[2]) throw new Error('Unexpected write result');
         const committed = await call(`/values/${encodeURIComponent(`'Operaciones'!C${reserved[1]}`)}?valueInputOption=RAW`, 'PUT', {
           majorDimension: 'ROWS', values: [['registered']]

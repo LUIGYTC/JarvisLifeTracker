@@ -10,7 +10,7 @@ export function cardMovements(values = [], tarjeta) {
   if (!Array.isArray(values) || values.length > 10001 || values.some(row => !Array.isArray(row))) throw new Error('Invalid movements');
   const rows = values.filter(row => !row.every(cell => cell == null || (typeof cell === 'string' && !cell.trim())));
   // Filter the full fixed source BEFORE the dashboard's global recent limit.
-  const selected = rows.length ? [rows[0], ...rows.slice(1).filter(row => row[6] === tarjeta)] : [];
+  const selected = rows.length ? [rows[0], ...rows.slice(1).filter(row => row[2] === 'Pago tarjeta' ? row[7] === tarjeta : row[6] === tarjeta)] : [];
   const movimientos = aggregateDashboard(selected).recent.slice(0, 10)
     .map(({ fecha, descripcion, categoria, monto, tipo }) => ({ fecha, descripcion, categoria, monto, tipo }));
   return { tarjeta, movimientos };

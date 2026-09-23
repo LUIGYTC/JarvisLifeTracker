@@ -4,8 +4,13 @@
   function render(data) {
     if (!data || !Number.isFinite(data.total) || !Array.isArray(data.cuentas) || data.cuentas.some(account =>
       typeof account.nombre !== 'string' || !account.nombre.trim() || !Number.isFinite(account.saldo))) throw Error('Invalid data');
-    return `<strong class="available-total">${money.format(data.total)}</strong><ul class="available-accounts">${data.cuentas.map(account =>
-      `<li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 3zM5 10v9m7-9v9m7-9v9M3 21h18"/></svg><span>${escape(account.nombre)}</span><strong>${money.format(account.saldo)}</strong></li>`).join('')}</ul>${data.cuentas.length ? '' : '<p class="muted">Sin cuentas de débito registradas.</p>'}`;
+    const other = data.otrasCuentas ?? [];
+    if (!Array.isArray(other) || other.some(account => !account || account.tipo !== 'Inversión' ||
+      typeof account.nombre !== 'string' || !account.nombre.trim() || !Number.isFinite(account.saldo))) throw Error('Invalid accounts');
+    const list = accounts => `<ul class="available-accounts">${accounts.map(account =>
+      `<li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 3zM5 10v9m7-9v9m7-9v9M3 21h18"/></svg><span>${escape(account.nombre)}</span><strong>${money.format(account.saldo)}</strong></li>`).join('')}</ul>`;
+    return `<strong class="available-total">${money.format(data.total)}</strong>${list(data.cuentas)}${data.cuentas.length ? '' : '<p class="muted">Sin cuentas de débito registradas.</p>'}
+      ${other.length ? `<h3>Otras cuentas</h3><p class="muted">Valor actual de inversiones · fuera de Dinero disponible</p>${list(other)}` : ''}`;
   }
   function mount(root) {
     let reader, controller, generation = 0;

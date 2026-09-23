@@ -1,7 +1,7 @@
 # Registro estructurado e idempotencia
 
 POST /api/movimientos conserva la autenticación, autorización, CORS y no-store
-existentes. Exige los nueve campos financieros originales y `operationId`, UUID v4
+existentes. Conserva los nueve campos financieros originales y `operationId`; acepta además `destino`, UUID v4
 con variante RFC 4122. Mayúsculas y minúsculas representan la misma operación.
 El servidor normaliza solo el UUID a minúsculas; no modifica los textos ni el monto.
 Campos adicionales, UUID ausente/incorrecto o payload inválido: 400 sin acceso de
@@ -16,14 +16,17 @@ No hay formulario, IA ni interfaz de escritura en esta versión.
 
 Content-Type application/json, opcional charset=utf-8; sin compresión. Máximo
 16 KiB y 5 segundos de lectura. Fecha real YYYY-MM-DD (0001–9999), hora HH:MM
-(00:00–23:59), tipo Gasto/Ingreso, monto number finito > 0 sin coerción ni redondeo.
+(00:00–23:59), tipo Gasto/Ingreso/Transferencia/Pago tarjeta, monto number finito > 0 sin coerción ni redondeo.
 categoria/metodo/origen: 1–100 unidades UTF-16; descripcion: 1–500;
 textoOriginal: 1–2000. Todos los textos deben contener algo distinto de espacios.
+La categoría puede ser la cadena vacía en Transferencia y Pago tarjeta, igual que
+en el lector del dashboard; sigue siendo obligatoria en Gasto e Ingreso.
+Destino ocupa H (máximo 100 caracteres). Es opcional/vacío para Gasto e Ingreso por compatibilidad; Transferencia y Pago tarjeta requieren un destino distinto del método de origen. Los nombres de cuentas/tarjetas son referencias suministradas por el cliente; este endpoint no recalcula saldos ni modifica fórmulas.
 Se preservan los caracteres originales, incluidos prefijos de fórmulas.
 
 La escritura financiera sigue usando values.append, INSERT_ROWS y
-valueInputOption=RAW en el spreadsheet fijo y `'Movimientos'!A:I`, exactamente
-Fecha, Hora, Tipo, Categoría, Monto, Descripción, Método, Origen, Texto original.
+valueInputOption=RAW en el spreadsheet fijo y `'Movimientos'!A:J`, exactamente
+Fecha, Hora, Tipo, Categoría, Monto, Descripción, Método, Destino, Origen, Texto original.
 No se añade operationId a Movimientos ni se alteran sus columnas.
 
 ## Algoritmo persistente
@@ -43,7 +46,7 @@ No se añade operationId a Movimientos ni se alteran sus columnas.
    para ese UUID puede continuar. Esto resuelve carreras habituales entre instancias
    que leyeron simultáneamente que no existía. Puede dejar reservas redundantes;
    siempre manda la primera. Una reserva posterior no puede tomar el relevo.
-6. Añadir una sola fila RAW A:I y exigir confirmación de una fila y nueve celdas
+6. Añadir una sola fila RAW A:J y exigir confirmación de una fila y diez celdas
    en ese rango. No se reintenta automáticamente ninguna llamada de escritura.
 7. Actualizar únicamente C de la reserva ganadora a registered, exigir confirmación
    de una celda y responder 200 {"registered":true}.

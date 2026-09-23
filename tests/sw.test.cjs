@@ -105,7 +105,7 @@ test('update reloads configuration and removes the previous app cache on activat
   handlers.install({ waitUntil: promise => { pending = promise; } });
   await pending;
   assert.notEqual(installedCache, oldCache);
-  assert.equal(installedCache, 'jarvislifetracker:/JarvisLifeTracker/:2.3.20');
+  assert.equal(installedCache, 'jarvislifetracker:/JarvisLifeTracker/:2.3.21');
   assert.ok(requests.some(request => request.url === base + 'config.js'));
   assert.ok(requests.some(request => request.url === base + 'tarjetas-credito.js'));
   assert.ok(requests.some(request => request.url === base + 'gastos-tarjetas.js'));

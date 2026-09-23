@@ -4,8 +4,14 @@ import { once } from 'node:events';
 import { createApp } from '../src/app.js';
 import { cardMovements, createCardMovementsReader, tarjetaSelection } from '../src/tarjeta-movimientos.js';
 import { SPREADSHEET_ID } from '../src/config.js';
-const header = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método'];
-const row = (method, day = 1) => [`2032-01-${String(day).padStart(2, '0')}`, '12:00', 'Gasto', 'Prueba', 10.1, `Sintético ${day}`, method, 'private-origin', 'private-original'];
+const header = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método', 'Destino'];
+const row = (method, day = 1) => [`2032-01-${String(day).padStart(2, '0')}`, '12:00', 'Gasto', 'Prueba', 10.1, `Sintético ${day}`, method, '', 'private-origin', 'private-original'];
+
+test('card payments are selected by destination, not the debit source, and retain their non-expense type', () => {
+  const payment = ['2032-01-02', '12:00', 'Pago tarjeta', '', 25, 'Pago sintético', 'Cuenta A', 'Crédito A'];
+  assert.equal(cardMovements([header, payment], 'Crédito A').movimientos[0].tipo, 'Pago tarjeta');
+  assert.deepEqual(cardMovements([header, payment], 'Cuenta A').movimientos, []);
+});
 
 test('card movements match Metodo exactly before limiting to ten, sorted newest first', () => {
   const rows = [header, ...Array.from({ length: 15 }, (_, i) => row('Sintética A', i + 1)),
@@ -30,10 +36,10 @@ test('card selection rejects missing, duplicated and arbitrary range parameters'
   assert.throws(() => cardMovements([header, bad], 'A'));
 });
 
-test('card movements reader uses ADC and only the fixed real Movimientos A:G source', async () => {
+test('card movements reader uses ADC and only the fixed real Movimientos A:H source', async () => {
   const reader = createCardMovementsReader({ auth: { getClient: async () => ({ getRequestHeaders: async () => ({ Authorization: 'synthetic-adc' }) }) },
     fetchImpl: async (url, options) => {
-      assert.equal(decodeURIComponent(url.pathname), `/v4/spreadsheets/${SPREADSHEET_ID}/values/'Movimientos'!A:G`);
+      assert.equal(decodeURIComponent(url.pathname), `/v4/spreadsheets/${SPREADSHEET_ID}/values/'Movimientos'!A:H`);
       assert.equal(options.method, 'GET'); assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error');
       assert.equal(options.headers.Authorization, 'synthetic-adc');
       return { status: 200, json: async () => ({ values: [header, row('A'), row('B')] }) };

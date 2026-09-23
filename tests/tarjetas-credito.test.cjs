@@ -213,11 +213,20 @@ test('click and keyboard open the selected card with current balance, recorded f
   view.setMovementsReader(async name => { calls.push(name); return { tarjeta: name, movimientos: [movement] }; });
   await view.open();
   action(root, '[data-credit-card]', 1); await settle();
-  for (const label of ['Sintética B', 'Saldo actual', '$250.00', '$750.00', '$1,000.00', '25% de utilización', 'Día de corte', 'Fecha límite de pago', 'Cuenta sintética', 'Última actualización', '22 ene 2032', 'Compra sintética', '$12.34', 'Gasto']) assert.ok(root.innerHTML.includes(label), label);
+  for (const label of ['Sintética B', 'Saldo actual', '$250.00', '$750.00', '$1,000.00', '25% de utilización', 'Día de corte', 'Fecha límite de pago', 'Cuenta sintética', 'Fecha base', '22 ene 2032', 'Compra sintética', '$12.34', 'Gasto']) assert.ok(root.innerHTML.includes(label), label);
   assert.doesNotMatch(root.innerHTML, /Sintética A|Pago del corte|Próximo pago|Pago estimado|Pago para no generar intereses|Número de tarjeta/);
   assert.deepEqual(calls, ['Sintética B']);
   action(root, '[data-credit-back]'); action(root, '[data-credit-card]', 0, 'Enter'); await settle();
   assert.deepEqual(calls, ['Sintética B', 'Sintética A']);
+});
+
+test('card detail accepts a payment as a distinct movement type without treating it as a purchase', async () => {
+  const { root, view } = setup();
+  view.setReader(async () => ({ tarjetas: [card()] }));
+  view.setMovementsReader(async tarjeta => ({ tarjeta, movimientos: [{ ...movement, tipo: 'Pago tarjeta', categoria: '', descripcion: 'Pago sintético' }] }));
+  await view.open(); action(root, '[data-credit-card]', 0); await settle();
+  assert.match(root.innerHTML, /Pago tarjeta/); assert.match(root.innerHTML, /Pago sintético/);
+  assert.doesNotMatch(root.innerHTML, /No se pudieron cargar los movimientos/);
 });
 
 test('return restores the unchanged overview without refetch or login; missing fields and movements stay empty', async () => {
@@ -227,7 +236,7 @@ test('return restores the unchanged overview without refetch or login; missing f
   const overview = root.innerHTML;
   action(root, '[data-credit-card]', 0, ' '); await settle();
   assert.match(root.innerHTML, /Aún no hay movimientos registrados con esta tarjeta/);
-  assert.match(root.innerHTML, /Última actualización/); assert.match(root.innerHTML, /Sin registrar/);
+  assert.match(root.innerHTML, /Fecha base/); assert.match(root.innerHTML, /Sin registrar/);
   assert.doesNotMatch(root.innerHTML, /Fecha límite de pago|Domiciliada a/);
   action(root, '[data-credit-back]'); assert.equal(root.innerHTML, overview); assert.equal(reads, 1);
 });

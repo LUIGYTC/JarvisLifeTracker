@@ -1,9 +1,9 @@
 import { GoogleAuth } from 'google-auth-library';
 import { SPREADSHEET_ID } from './config.js';
 
-export const TARJETAS_RANGE = "'TarjetasCredito'!A:J";
-const headers = ['Tarjeta', 'Tipo', 'Límite', 'Utilizado', 'Disponible', '% Utilización',
-  'Día de corte', 'Última actualización', 'Fecha límite de pago', 'Domiciliada a'];
+export const TARJETAS_RANGE = "'TarjetasCredito'!A:K";
+const headers = ['Tarjeta', 'Tipo', 'Límite', 'Utilizado base', 'Utilizado actual', 'Disponible', '% Utilización',
+  'Día de corte', 'Fecha/hora base', 'Fecha límite de pago', 'Domiciliada a'];
 const invalid = () => { throw new Error('Invalid credit card data'); };
 const empty = value => value == null || (typeof value === 'string' && !value.trim());
 function label(value, optional = false) {
@@ -57,11 +57,11 @@ export function parseTarjetas(values = []) {
   for (const row of values.slice(1)) {
     try {
       if (!Array.isArray(row) || row.every(empty)) continue;
-      const diaCorte = empty(row[6]) ? null : decimal(row[6]);
+      const diaCorte = empty(row[7]) ? null : decimal(row[7]);
       if (diaCorte !== null && (!Number.isInteger(diaCorte) || diaCorte < 1 || diaCorte > 31)) invalid();
       tarjetas.push({ tarjeta: label(row[0]), tipo: label(row[1]), limite: money(row[2]),
-        utilizado: money(row[3]), disponible: money(row[4], true), porcentajeUtilizacion: percentage(row[5]),
-        diaCorte, ultimaActualizacion: date(row[7]), fechaLimitePago: date(row[8]), domiciliadaA: label(row[9], true) });
+        utilizado: money(row[4]), disponible: money(row[5], true), porcentajeUtilizacion: percentage(row[6]),
+        diaCorte, ultimaActualizacion: date(row[8]), fechaLimitePago: date(row[9]), domiciliadaA: label(row[10], true) });
     } catch { /* Skip invalid rows without logging financial data. */ }
   }
   return { tarjetas };

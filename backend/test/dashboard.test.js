@@ -3,13 +3,23 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { aggregateDashboard, createDashboardReader } from '../src/dashboard.js';
 import { createApp } from '../src/app.js';
-const header = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método'];
+const header = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método', 'Destino'];
 const rows = [header,
   ['2026-09-02', '10:00', 'Gasto', 'Comida', 10.10, 'A', 'Efectivo'],
   ['2026-09-01', '12:00', 'Ingreso', 'Trabajo', 100, 'B', 'Transferencia'],
   [], ['', '', '', '', '', '', ''],
   ['2026-09-02', '11:00', 'Gasto', 'Comida', 20.20, 'C', 'Tarjeta'],
   ['2026-09-01', '09:00', 'Gasto', 'Transporte', 5, 'D', 'Efectivo']];
+
+test('transfers and card payments are visible with destination but never counted as income or expense', () => {
+  const internal = [['2034-01-02', '12:00', 'Transferencia', '', 100, 'Entre cuentas', 'Cuenta A', 'Cuenta B'],
+    ['2034-01-03', '12:00', 'Pago tarjeta', '', 50, 'Pago registrado', 'Cuenta B', 'Crédito A']];
+  const data = aggregateDashboard([header, ...rows.slice(1), ...internal]);
+  assert.deepEqual(data.summary, { ingresos: 100, gastos: 35.3, balance: 64.7, movimientos: 6 });
+  assert.equal(data.recent[0].destino, 'Crédito A'); assert.equal(data.recent[1].destino, 'Cuenta B');
+  assert.equal(data.daily.length, 2); assert.equal(data.byPaymentMethod.some(item => item.metodo === 'Cuenta B'), false);
+  assert.throws(() => aggregateDashboard([header, [...internal[0].slice(0, 7), '']]));
+});
 test('dashboard calculates totals, expense groups, daily order and recent order without extra fields', () => {
   const data = aggregateDashboard(rows);
   assert.deepEqual(data.summary, { ingresos: 100, gastos: 35.3, balance: 64.7, movimientos: 4 });
@@ -17,7 +27,7 @@ test('dashboard calculates totals, expense groups, daily order and recent order 
   assert.deepEqual(data.byPaymentMethod, [{ metodo: 'Tarjeta', total: 20.2 }, { metodo: 'Efectivo', total: 15.1 }]);
   assert.deepEqual(data.daily, [{ fecha: '2026-09-01', ingresos: 100, gastos: 5 }, { fecha: '2026-09-02', ingresos: 0, gastos: 30.3 }]);
   assert.deepEqual(data.recent.map(item => item.descripcion), ['C', 'A', 'B', 'D']);
-  assert.deepEqual(Object.keys(data.recent[0]), ['fecha', 'hora', 'tipo', 'categoria', 'monto', 'descripcion', 'metodo']);
+  assert.deepEqual(Object.keys(data.recent[0]), ['fecha', 'hora', 'tipo', 'categoria', 'monto', 'descripcion', 'metodo', 'destino']);
 });
 test('dashboard handles empty data and Sheets date/time serials', () => {
   assert.equal(aggregateDashboard([]).summary.movimientos, 0);
@@ -30,9 +40,9 @@ test('dashboard handles empty data and Sheets date/time serials', () => {
 
 test('dashboard preserves response keys and never exposes source or original text', () => {
   const data = aggregateDashboard([[...header, 'Origen', 'Texto original'],
-    [...rows[1], 'synthetic-source', 'synthetic-original-text']]);
+    [...rows[1], '', 'synthetic-source', 'synthetic-original-text']]);
   assert.deepEqual(Object.keys(data), ['summary', 'byCategory', 'byPaymentMethod', 'daily', 'recent']);
-  assert.deepEqual(Object.keys(data.recent[0]), ['fecha', 'hora', 'tipo', 'categoria', 'monto', 'descripcion', 'metodo']);
+  assert.deepEqual(Object.keys(data.recent[0]), ['fecha', 'hora', 'tipo', 'categoria', 'monto', 'descripcion', 'metodo', 'destino']);
   assert.doesNotMatch(JSON.stringify(data), /Origen|Texto original|synthetic-source|synthetic-original-text/);
 });
 test('dashboard fails closed for invalid rows rather than displaying misleading partial totals', () => {
@@ -46,11 +56,11 @@ test('dashboard limits recent records to twenty while totals include all valid r
   const data = aggregateDashboard([header, ...Array.from({ length: 25 }, () => rows[1])]);
   assert.equal(data.recent.length, 20); assert.equal(data.summary.movimientos, 25); assert.equal(data.summary.gastos, 252.5);
 });
-test('reader uses ADC only for GET Movimientos A:G and sanitizes failures', async () => {
+test('reader uses ADC only for GET Movimientos A:H and sanitizes failures', async () => {
   const auth = { getClient: async () => ({ getRequestHeaders: async () => ({}) }) };
   const reader = createDashboardReader({ auth, fetchImpl: async (url, options) => {
-    assert.match(decodeURIComponent(url.pathname), /\/values\/'Movimientos'!A:G$/);
-    assert.equal(url.searchParams.get('valueRenderOption'), 'FORMULA');
+    assert.match(decodeURIComponent(url.pathname), /\/values\/'Movimientos'!A:H$/);
+    assert.equal(url.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE');
     assert.equal(options.method, 'GET'); assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error');
     return { status: 200, json: async () => ({ values: rows }) };
   } });

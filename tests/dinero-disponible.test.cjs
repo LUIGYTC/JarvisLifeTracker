@@ -17,6 +17,18 @@ test('dynamic accounts, zero, MXN and escaped names use generic lightweight icon
   assert.equal((root.innerHTML.match(/<svg /g) || []).length, 2);
   assert.doesNotMatch(root.innerHTML, /<cuenta>|Ahorros|Patrimonio|Balance|Disponible de crédito/);
 });
+
+test('investment accounts render separately with evaluated value, while the primary total stays liquid', async () => {
+  const { root, view } = setup();
+  view.setReader(async () => ({ ...data, otrasCuentas: [{ nombre: 'Fondo <sintético>', saldo: 432.1, tipo: 'Inversión' }] }));
+  await view.open();
+  assert.match(root.innerHTML, /class="available-total">\$12.34/);
+  const sections = root.innerHTML.split('<h3>Otras cuentas</h3>');
+  assert.doesNotMatch(sections[0], /432.10|Fondo/);
+  assert.match(sections[1], /fuera de Dinero disponible/); assert.match(sections[1], /Fondo &lt;sintético&gt;/);
+  assert.match(sections[1], /\$432.10/);
+  view.reset(); assert.equal(root.innerHTML, '');
+});
 test('empty dataset shows zero and no registered accounts; errors never show a fake zero', async () => {
   const { root, view } = setup(); view.setReader(async () => ({ total: 0, cuentas: [] })); await view.open();
   assert.match(root.innerHTML, /\$0.00/); assert.match(root.innerHTML, /Sin cuentas de débito registradas/);

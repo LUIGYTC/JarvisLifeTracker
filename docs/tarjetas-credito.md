@@ -2,12 +2,12 @@
 
 `GET /api/tarjetas-credito` comparte Google ID token, autorización por `sub`, CORS y
 `Cache-Control: no-store` con las otras APIs privadas. No admite parámetros ni cuerpo.
-La lectura ADC usa el spreadsheet configurado y exclusivamente `'TarjetasCredito'!A:J`,
+La lectura ADC usa el spreadsheet configurado y exclusivamente `'TarjetasCredito'!A:K`,
 scope `spreadsheets.readonly`, método GET y timeout de 8 segundos. No escribe en Sheets.
 
 Respuesta: `{ tarjetas: [...] }`. Cada elemento incluye únicamente `tarjeta`, `tipo`,
 `limite`, `utilizado`, `disponible`, `porcentajeUtilizacion`, `diaCorte`,
-`ultimaActualizacion`, `fechaLimitePago` y `domiciliadaA`. No se leen columnas adicionales.
+`ultimaActualizacion`, `fechaLimitePago` y `domiciliadaA`. Se conserva el contrato JSON: `utilizado` procede de Utilizado actual (E), `disponible` de F y `porcentajeUtilizacion` de G. Utilizado base (D) no se usa para calcularlos. `ultimaActualizacion` conserva su nombre por compatibilidad y ahora representa la fecha base de I; la interfaz la rotula «Fecha base».
 
 Se solicitan valores sin formato (`UNFORMATTED_VALUE`) para obtener números nativos y
 resultados de fórmulas, no fórmulas ni importes formateados. Importes finitos con máximo
@@ -20,7 +20,7 @@ explícito `25%` también se normaliza a 25. La API devuelve puntos porcentuales
 dos decimales y admite utilización superior a 100%. No recalcula saldos ni cortes.
 
 Las fechas admiten serial nativo de Sheets, ISO `YYYY-MM-DD` o texto `D/M/YYYY` y se
-normalizan a ISO; la actualización conserva solo la fecha. Corte: entero de 1 a 31.
+normalizan a ISO; la fecha base conserva solo la fecha. Corte: entero de 1 a 31.
 Corte, actualización, fecha límite y domiciliación vacíos se devuelven como `null`.
 Una fila inválida se omite sin registrar su contenido ni afectar las filas válidas.
 Encabezados incorrectos o más de 10 000 filas de datos producen error genérico.
@@ -33,14 +33,13 @@ Las cards abren el detalle de la tarjeta mediante clic, tap, Enter o espacio.
 El detalle usa los datos ya cargados y llama «Saldo actual» al campo `utilizado`.
 Muestra tipo, utilización, disponible, límite, corte, fechas y domiciliación registrada.
 Volver a «Tarjetas de crédito» restaura la vista general en memoria sin otra lectura
-ni autenticación. No se incluyen cortes históricos, próximo pago, saldo al corte,
-pagos ni edición.
+ni autenticación. El detalle no edita datos. Los pagos registrados se muestran como Pago tarjeta y se seleccionan por Destino, sin volver a sumarlos como gasto.
 
 `GET /api/tarjetas-credito/movimientos?tarjeta=...` acepta exactamente un nombre de
 tarjeta, con máximo 100 caracteres. Después de autenticar y autorizar, valida el
-nombre contra `TarjetasCredito!A:J`. Una selección inexistente devuelve 404;
+nombre contra `TarjetasCredito!A:K`. Una selección inexistente devuelve 404;
 parámetros adicionales, duplicados o vacíos devuelven 400. No admite rangos del cliente.
-Lee exclusivamente `Movimientos!A:G` con ADC y la validación existente del dashboard.
+Lee exclusivamente `Movimientos!A:H` con ADC y la validación existente del dashboard.
 Filtra por coincidencia exacta de `Método` antes de ordenar por fecha/hora descendente
 y limitar a 10. No usa la lista global de 20 movimientos recientes del dashboard.
 Devuelve `{ tarjeta, movimientos }`, con fecha, descripción, categoría, monto y tipo
@@ -52,7 +51,7 @@ tarjeta o cerrar sesión aborta la lectura e invalida las respuestas tardías.
 ## Próximo corte dinámico
 
 `GET /api/tarjetas-credito/proximo-corte?tarjeta=...` comparte autenticación, autorización
-por sub, CORS y `no-store`. Valida la selección contra `TarjetasCredito!A:J`; solo el
+por sub, CORS y `no-store`. Valida la selección contra `TarjetasCredito!A:K`; solo el
 servidor determina la fecha actual y los rangos. No admite fechas ni rangos del cliente.
 Si falta un día de corte válido responde 422 sin inventar un periodo.
 
@@ -62,7 +61,7 @@ Cada corte mensual se ajusta por separado al último día válido del mes si el 
 configurado no existe. El periodo comienza al día siguiente del corte anterior y
 termina en el corte actual; ambos extremos se incluyen. No hay cierres automáticos.
 
-Compras normales: vuelve a leer `Movimientos!A:G` y suma todos los gastos válidos cuyo
+Compras normales: vuelve a leer `Movimientos!A:H` y suma todos los gastos válidos cuyo
 Método coincide exactamente y Fecha pertenece al periodo. No usa la lista truncada
 de movimientos recientes ni suma ingresos o el saldo Utilizado del snapshot.
 MSI: reutiliza la lectura de `ComprasMSI!A:H`, tarjeta exacta y Estado Activo; suma

@@ -107,7 +107,7 @@ No hay proxy de hojas arbitrarias ni credenciales de servicio en el frontend.
 ## Escritura estructurada de movimientos
 
 POST /api/movimientos atraviesa la misma autorización y valida un JSON cerrado de
-diez campos (incluido operationId UUID v4) antes de llamar a Sheets. El spreadsheet y Movimientos A:I están
+diez campos originales (incluido operationId UUID v4), más destino opcional en Gasto/Ingreso y obligatorio en Transferencia/Pago tarjeta antes de llamar a Sheets. El spreadsheet y Movimientos A:J están
 fijados en backend. Un cliente ADC separado solicita scope spreadsheets y añade
 una sola fila mediante append, INSERT_ROWS y RAW. Los strings se almacenan
 literalmente sin interpretar fórmulas; el monto sigue siendo un número.

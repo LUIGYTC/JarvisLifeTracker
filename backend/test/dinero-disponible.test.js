@@ -3,7 +3,26 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { aggregateAvailableMoney, createAvailableMoneyReader, DEBIT_RANGES } from '../src/dinero-disponible.js';
 import { createApp } from '../src/app.js';
-const parse = rows => aggregateAvailableMoney([['Tarjeta'], ...rows.map(row => [row[0]])], [['Saldo disponible'], ...rows.map(row => [row[1]])]);
+const parse = rows => aggregateAvailableMoney([['Cuenta'], ...rows.map(row => [row[0]])], [['Saldo disponible / valor actual'], ...rows.map(row => [row[1]])], [['Tipo'], ...rows.map(row => [row.every(value => value == null || (typeof value === 'string' && !value.trim())) ? '' : 'Débito'])]);
+
+test('current Cuentas types include debit and remunerated accounts but never investments or names as rules', () => {
+  const names = [['Cuenta'], ['Nueva A'], ['Nueva B'], ['Débito es solo un nombre']];
+  const balances = [['Saldo disponible / valor actual'], [10], [20], [9999]];
+  const types = [['Tipo'], ['Débito'], ['Cuenta remunerada'], ['Inversión']];
+  assert.deepEqual(aggregateAvailableMoney(names, balances, types), { total: 30,
+    cuentas: [{ nombre: 'Nueva A', saldo: 10 }, { nombre: 'Nueva B', saldo: 20 }],
+    otrasCuentas: [{ nombre: 'Débito es solo un nombre', saldo: 9999, tipo: 'Inversión' }] });
+  assert.throws(() => aggregateAvailableMoney(names, balances, [['Tipo'], ['Desconocido']]));
+});
+
+test('investment-only Cuentas remains visible without inflating liquid money or changing its evaluated value', () => {
+  const result = aggregateAvailableMoney([['Cuenta'], ['Inversión sintética']],
+    [['Saldo disponible / valor actual'], [432.10]], [['Tipo'], ['Inversión']]);
+  assert.equal(result.total, 0); assert.deepEqual(result.cuentas, []);
+  assert.deepEqual(result.otrasCuentas, [{ nombre: 'Inversión sintética', saldo: 432.1, tipo: 'Inversión' }]);
+  assert.throws(() => aggregateAvailableMoney([['Cuenta'], ['Inversión sintética']],
+    [['Saldo disponible / valor actual'], ['#VALUE!']], [['Tipo'], ['Inversión']]));
+});
 
 test('one account, dynamic names, zero, signed balances and precise sum across all accounts', () => {
   assert.deepEqual(parse([['Cuenta sintética', 12.34]]), { total: 12.34, cuentas: [{ nombre: 'Cuenta sintética', saldo: 12.34 }] });
@@ -35,12 +54,12 @@ test('reader uses ADC headers and only debit name/balance columns, reads fresh e
   const reader = createAvailableMoneyReader({ auth: { getClient: async () => ({ getRequestHeaders: async () => headers }) }, fetchImpl: async (url, options) => {
     calls++;
     assert.deepEqual(url.searchParams.getAll('ranges'), DEBIT_RANGES);
-    assert.deepEqual(DEBIT_RANGES, ["'TarjetasDebito'!A:A", "'TarjetasDebito'!C:C"]);
+    assert.deepEqual(DEBIT_RANGES, ["'Cuentas'!A:A", "'Cuentas'!E:E", "'Cuentas'!C:C"]);
     assert.equal(url.searchParams.get('fields'), 'valueRanges(values)');
     assert.equal(url.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE');
     assert.equal(options.headers, headers);
     assert.equal(options.method, 'GET'); assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error');
-    return { status: 200, json: async () => ({ valueRanges: [{ values: [['Tarjeta'], ['Dinámica']] }, { values: [['Saldo disponible'], [calls]] }] }) };
+    return { status: 200, json: async () => ({ valueRanges: [{ values: [['Cuenta'], ['Dinámica']] }, { values: [['Saldo disponible / valor actual'], [calls]] }, { values: [['Tipo'], ['Débito']] }] }) };
   } });
   assert.deepEqual(await reader(), { total: 1, cuentas: [{ nombre: 'Dinámica', saldo: 1 }] });
   assert.equal((await reader()).total, 2);
@@ -52,7 +71,7 @@ test('reader sanitizes provider errors, malformed responses and timeouts', async
     await assert.rejects(createAvailableMoneyReader({ auth, fetchImpl: async () => response })(), /^Error: Available money unavailable$/);
   }
   await assert.rejects(createAvailableMoneyReader({ auth: { getClient: () => new Promise(() => {}) }, timeoutMs: 5 })(), /^Error: Available money unavailable$/);
-  const empty = createAvailableMoneyReader({ auth, fetchImpl: async () => ({ status: 200, json: async () => ({ valueRanges: [{}, {}] }) }) });
+  const empty = createAvailableMoneyReader({ auth, fetchImpl: async () => ({ status: 200, json: async () => ({ valueRanges: [{}, {}, {}] }) }) });
   assert.deepEqual(await empty(), { total: 0, cuentas: [] });
 });
 

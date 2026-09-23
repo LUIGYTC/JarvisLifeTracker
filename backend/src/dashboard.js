@@ -2,8 +2,8 @@ import { GoogleAuth } from 'google-auth-library';
 import { SPREADSHEET_ID } from './config.js';
 
 // Server-only source. Never accept a range or spreadsheet from the request.
-export const DASHBOARD_RANGE = "'Movimientos'!A:G";
-const headers = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método'];
+export const DASHBOARD_RANGE = "'Movimientos'!A:H";
+const headers = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método', 'Destino'];
 const invalid = () => { throw new Error('Invalid dashboard data'); };
 export function dateText(value) {
   if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 2958465) {
@@ -39,13 +39,16 @@ export function aggregateDashboard(values = []) {
   for (const row of values.slice(1)) {
     if (!Array.isArray(row)) invalid();
     if (row.every(cell => cell === '' || cell == null)) continue;
-    const [fecha, hora, tipo, categoria, monto, descripcion, metodo] = row;
-    if (!['Ingreso', 'Gasto'].includes(tipo) || typeof monto !== 'number' || !Number.isFinite(monto) || monto <= 0) invalid();
+    const [fecha, hora, tipo, categoria, monto, descripcion, metodo, destino] = row;
+    if (!['Ingreso', 'Gasto', 'Transferencia', 'Pago tarjeta'].includes(tipo) || typeof monto !== 'number' || !Number.isFinite(monto) || monto <= 0) invalid();
     const cents = Math.round(monto * 100);
     if (!Number.isSafeInteger(cents) || cents <= 0 || Math.abs(monto * 100 - cents) > 1e-7) invalid();
+    const internal = tipo === 'Transferencia' || tipo === 'Pago tarjeta';
+    if (internal && (typeof destino !== 'string' || !destino.trim() || destino === metodo)) invalid();
     const item = { fecha: dateText(fecha), hora: timeText(hora), tipo,
-      categoria: text(categoria, 100), monto: cents / 100, descripcion: text(descripcion, 500), metodo: text(metodo, 100) };
+      categoria: internal && (categoria == null || categoria === '') ? '' : text(categoria, 100), monto: cents / 100, descripcion: text(descripcion, 500), metodo: text(metodo, 100), destino: destino == null || destino === '' ? '' : text(destino, 100) };
     recent.push(item);
+    if (internal) continue;
     const day = days.get(item.fecha) || { fecha: item.fecha, ingresos: 0, gastos: 0 };
     if (tipo === 'Ingreso') { ingresos = add(ingresos, cents); day.ingresos = add(day.ingresos, cents); }
     else {
@@ -74,7 +77,7 @@ export function createDashboardReader({ auth = new GoogleAuth({ scopes: ['https:
         const headers = await client.getRequestHeaders();
         controller.signal.throwIfAborted();
         const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(DASHBOARD_RANGE)}`);
-        url.search = new URLSearchParams({ valueRenderOption: 'FORMULA', dateTimeRenderOption: 'SERIAL_NUMBER', fields: 'values' });
+        url.search = new URLSearchParams({ valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER', fields: 'values' });
         const response = await fetchImpl(url, { method: 'GET', headers, signal: controller.signal, cache: 'no-store', redirect: 'error' });
         if (response.status !== 200) invalid();
         const data = await response.json();

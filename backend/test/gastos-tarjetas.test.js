@@ -7,7 +7,7 @@ import { createTarjetasReader } from '../src/tarjetas-credito.js';
 import { createApp } from '../src/app.js';
 import { SPREADSHEET_ID } from '../src/config.js';
 const cards = [{ tarjeta: 'Sintética A' }, { tarjeta: 'Sintética B' }];
-const header = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método'];
+const header = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método', 'Destino'];
 const period = { inicioPeriodo: '2036-02-01', finPeriodo: '2036-02-12' };
 const row = (monto = 2.25, categoria = 'Categoría sintética', metodo = cards[0].tarjeta, fecha = period.inicioPeriodo, tipo = 'Gasto') => [fecha, '12:00', tipo, categoria, monto, 'Descripción privada sintética', metodo];
 
@@ -39,6 +39,14 @@ test('all qualifying rows count beyond recent limit; native dates and new cards 
   const next = { tarjeta: 'Nueva sintética' };
   assert.equal(aggregateCardExpenses([header, row(1, 'Nueva', next.tarjeta, serial)], [...cards, next], period).total, 1);
 });
+
+test('transfers and card payments are never added to card spending even when they reference the same card', () => {
+  const values = [header, row(),
+    [...row(90, 'No gasto', cards[0].tarjeta, period.inicioPeriodo, 'Transferencia'), 'Cuenta destino'],
+    [...row(90, 'No gasto', 'Cuenta origen', period.inicioPeriodo, 'Pago tarjeta'), cards[0].tarjeta]];
+  const result = aggregateCardExpenses(values, cards, period);
+  assert.equal(result.total, 2.25); assert.equal(result.numeroCompras, 1);
+});
 test('no movements, no cards and no matches return empty safe aggregates', () => {
   for (const [rows, names] of [[[], cards], [[header], cards], [[header, row()], []]]) {
     assert.deepEqual(aggregateCardExpenses(rows, names, period), { ...period, total: 0, numeroCompras: 0, categorias: [] });
@@ -54,10 +62,10 @@ test('reader uses only fixed real sheet ranges, ADC injected transport, GET/no-s
     const range = decodeURIComponent(url.pathname).split('/values/')[1]; calls.push(range);
     assert.ok(url.pathname.startsWith(`/v4/spreadsheets/${SPREADSHEET_ID}/values/`));
     assert.equal(init.method, 'GET'); assert.equal(init.cache, 'no-store');
-    assert.ok(["'Movimientos'!A:G", "'TarjetasCredito'!A:J"].includes(range));
-    return { status: 200, json: async () => ({ values: range === "'Movimientos'!A:G" ? rows : [
-      ['Tarjeta', 'Tipo', 'Límite', 'Utilizado', 'Disponible', '% Utilización', 'Día de corte', 'Última actualización', 'Fecha límite de pago', 'Domiciliada a'],
-      [cards[0].tarjeta, 'Crédito', 100, 10, 90, 0.1, 7, '', '', '']] }) };
+    assert.ok(["'Movimientos'!A:H", "'TarjetasCredito'!A:K"].includes(range));
+    return { status: 200, json: async () => ({ values: range === "'Movimientos'!A:H" ? rows : [
+      ['Tarjeta', 'Tipo', 'Límite', 'Utilizado base', 'Utilizado actual', 'Disponible', '% Utilización', 'Día de corte', 'Fecha/hora base', 'Fecha límite de pago', 'Domiciliada a'],
+      [cards[0].tarjeta, 'Crédito', 100, 7, 10, 90, 0.1, 7, '', '', '']] }) };
   } };
   const reader = createCardExpensesReader({ now: () => new Date('2036-02-12T18:00:00Z'), readTarjetas: createTarjetasReader(options),
     readExpenses: (cards, period) => createDashboardReader({ ...options, aggregate: values => aggregateCardExpenses(values, cards, period) })() });

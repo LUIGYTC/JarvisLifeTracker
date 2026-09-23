@@ -4,16 +4,76 @@ import { once } from 'node:events';
 import { calculateFreeMoney, createFreeMoneyReader, fortnight, FREE_MONEY_RANGES } from '../src/dinero-libre.js';
 import { createApp } from '../src/app.js';
 import { readConfig } from '../src/config.js';
-const CH = ['Compromiso', 'Tipo', 'Monto', 'Frecuencia', 'Día / regla', 'Método', 'Estado', 'Último pago'];
+const CH = ['Compromiso', 'Tipo', 'Monto', 'Frecuencia', 'Próxima fecha de pago', 'Método', 'Estado', 'Último pago'];
 const DH = ['Tarjeta', 'Inicio periodo', 'Fin periodo', 'Fecha corte', 'Fecha límite'];
 const AH = ['Total corte', 'Monto pagado', 'Saldo pendiente', 'Estado', 'Fecha de pago', 'Última actualización'];
-const MH = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método'];
+const MH = ['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método', 'Destino'];
 const base = { available: { total: 900, cuentas: [{ nombre: 'Cuenta sintética', saldo: 900 }] }, today: '2034-03-10', anchor: '2034-03-02' };
-const commitment = (changes = {}) => Object.assign(['Reserva sintética', 'Gasto fijo', 100, 'Mensual', 'Día 12', 'Cuenta sintética', 'Activo', ''], changes);
+const commitment = (changes = {}) => Object.assign(['Reserva sintética', 'Gasto fijo', 100, 'Mensual', '2034-03-12', 'Cuenta sintética', 'Activo', ''], changes);
 const cutDate = ['Crédito sintético', '2034-02-01', '2034-02-28', '2034-03-01', '2034-03-14'];
 const cutAmount = [150, 50, 100, 'Parcial', '2034-03-04', '2034-03-06'];
 const expense = (changes = {}) => Object.assign(['2034-03-08', '12:00', 'Gasto', 'Prueba', 100, 'Texto libre', 'Efectivo'], changes);
 const calculate = options => calculateFreeMoney({ ...base, ...options });
+
+test('native cut update timestamps are accepted, while same-day payments still require reconciliation', () => {
+  const serial = (Date.UTC(2034, 2, 6) - Date.UTC(1899, 11, 30)) / 86400000;
+  const cuts = { cutDates: [DH, cutDate], cutAmounts: [AH, [...cutAmount.slice(0, 5), serial + 0.75]] };
+  assert.equal(calculate(cuts).cortesPendientes, 100);
+  assert.equal(calculate(cuts).dineroLibre, 800);
+  const pending = calculate({ ...cuts, movements: [MH, [...expense({ 0: '2034-03-06', 2: 'Pago tarjeta' }), 'Crédito sintético']] });
+  assert.equal(pending.dineroLibre, null);
+  assert.ok(pending.pendientes.some(item => item.codigo === 'conciliar_corte'));
+});
+
+test('empty historical cuts, with or without headers, never invent a pending amount or hide commitments', async () => {
+  for (const [cutDates, cutAmounts] of [[[], []], [[DH], [AH]]]) {
+    const data = calculate({ cutDates, cutAmounts, commitments: [CH, commitment()] });
+    assert.equal(data.cortesPendientes, 0); assert.deepEqual(data.cortes, []);
+    assert.equal(data.compromisosInformativos.length, 1); assert.equal(data.dineroLibre, null);
+  }
+  const values = [[['Cuenta'], ['Cuenta sintética']], [['Saldo disponible / valor actual'], [900]],
+    [['Tipo'], ['Débito']], [CH, commitment()], undefined, undefined, [MH]];
+  const reader = createFreeMoneyReader({ anchor: base.anchor, now: () => new Date('2034-03-10T12:00:00Z'),
+    auth: { getClient: async () => ({ getRequestHeaders: async () => ({}) }) },
+    fetchImpl: async () => ({ status: 200, json: async () => ({ valueRanges: values.map(values => values ? { values } : {}) }) }) });
+  const data = await reader();
+  assert.equal(data.cortesPendientes, 0); assert.deepEqual(data.cortes, []); assert.equal(data.compromisosInformativos.length, 1);
+});
+
+test('commitments are displayed without interpreting rules, reserving funds or executing payments', () => {
+  const data = calculate({ commitments: [CH, commitment(), [], commitment({ 0: 'Otra regla', 3: 'Futura', 4: 'Por confirmar', 5: '' })] });
+  assert.equal(data.estado, 'incompleto'); assert.equal(data.dineroLibre, null); assert.equal(data.compromisosApartados, null);
+  assert.deepEqual(data.compromisos, []); assert.equal(data.compromisosInformativos.length, 2);
+  assert.deepEqual(data.compromisosInformativos[0], { nombre: 'Reserva sintética', tipo: 'Gasto fijo', monto: 100,
+    frecuencia: 'Mensual', proximaFechaPago: '2034-03-12', metodo: 'Cuenta sintética', estado: 'Activo' });
+  assert.ok(data.pendientes.some(item => item.codigo === 'compromisos_solo_lectura'));
+  assert.equal(calculate({}).dineroLibre, 900);
+});
+
+test('only card payments to the relevant destination trigger reconciliation, never transfers or ordinary expenses', () => {
+  const cuts = { cutDates: [DH, cutDate], cutAmounts: [AH, cutAmount] };
+  for (const row of [expense(), [...expense({ 2: 'Transferencia' }), 'Otra cuenta'], [...expense({ 2: 'Pago tarjeta' }), 'Otra tarjeta']]) {
+    assert.equal(calculate({ ...cuts, movements: [MH, row] }).dineroLibre, 800);
+  }
+  assert.equal(calculate({ ...cuts, movements: [MH, [...expense({ 2: 'Pago tarjeta' }), 'Crédito sintético']] }).dineroLibre, null);
+  assert.equal(calculate({ ...cuts, cutAmounts: [AH, [150, 150, 0, 'Pagado', '2034-03-08', '2034-03-08']],
+    movements: [MH, [...expense({ 2: 'Pago tarjeta' }), 'Crédito sintético']] }).dineroLibre, 900);
+});
+
+test('reader uses current Cuentas types and evaluated balances, current Compromisos header and fixed read-only ranges', async () => {
+  const values = [[['Cuenta'], ['Cuenta sintética'], ['Inversión sintética']], [['Saldo disponible / valor actual'], [900], [700]],
+    [['Tipo'], ['Cuenta remunerada'], ['Inversión']], [CH, commitment()], [DH], [AH], [MH]];
+  const reader = createFreeMoneyReader({ anchor: base.anchor, now: () => new Date('2034-03-10T12:00:00Z'),
+    auth: { getClient: async () => ({ getRequestHeaders: async () => ({}) }) }, fetchImpl: async (url, options) => {
+      assert.deepEqual(url.searchParams.getAll('ranges'), FREE_MONEY_RANGES);
+      assert.doesNotMatch(url.href, /TarjetasDebito|TarjetasCredito|ComprasMSI/);
+      assert.equal(options.method, 'GET'); assert.equal(options.cache, 'no-store');
+      assert.equal(url.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE');
+      return { status: 200, json: async () => ({ valueRanges: values.map(values => ({ values })) }) };
+    } });
+  const data = await reader(); assert.equal(data.dineroDisponible, 900); assert.equal(data.dineroLibre, null);
+  assert.equal(data.compromisosInformativos.length, 1);
+});
 
 test('true 14-day periods support boundaries, earlier dates and leap years without assuming quincenas', () => {
   assert.deepEqual(fortnight('2034-03-15', '2034-03-02'), { inicio: '2034-03-02', fin: '2034-03-15' });
@@ -23,67 +83,6 @@ test('true 14-day periods support boundaries, earlier dates and leap years witho
   assert.throws(() => fortnight('2034-02-30', '2034-03-02'));
   assert.equal(readConfig({ FORTNIGHT_ANCHOR: '2034-03-02' }).fortnightAnchor, '2034-03-02');
   assert.equal(readConfig({}).fortnightAnchor, '');
-});
-
-test('available minus pending commitments minus real residual cut; savings use recorded per-period amount', () => {
-  const data = calculate({ commitments: [CH, commitment(), commitment({ 0: 'Reserva futura', 1: 'Ahorro', 2: 60, 4: '$30 por catorcena' })],
-    cutDates: [DH, cutDate], cutAmounts: [AH, cutAmount] });
-  assert.equal(data.estado, 'completo'); assert.equal(data.dineroDisponible, 900);
-  assert.equal(data.compromisosApartados, 130); assert.equal(data.cortesPendientes, 100); assert.equal(data.dineroLibre, 670);
-  assert.deepEqual(Object.keys(data.cortes[0]), ['nombre', 'fechaCorte', 'monto']);
-  assert.equal(calculate({ available: { total: 1, cuentas: base.available.cuentas }, commitments: [CH, commitment()] }).dineroLibre, -99);
-});
-
-test('empty sources, zero balances and zero commitments produce valid zero, not invented cuts', () => {
-  const data = calculate({ available: { total: 0, cuentas: [] } });
-  assert.equal(data.estado, 'completo'); assert.equal(data.dineroLibre, 0); assert.deepEqual(data.cortes, []);
-  assert.equal(calculate({ commitments: [CH, [], commitment({ 2: 0 })] }).compromisosApartados, 0);
-});
-
-test('explicit cash commitments and internal savings reserves do not require a named debit account', () => {
-  assert.equal(calculate({ commitments: [CH, commitment({ 5: 'Efectivo' })] }).compromisosApartados, 100);
-  assert.equal(calculate({ commitments: [CH, commitment({ 1: 'Ahorro', 4: '20 por catorcena', 5: '' })] }).compromisosApartados, 20);
-});
-
-test('paid commitments and paid cuts are never subtracted again with their recorded movements', () => {
-  const data = calculate({ commitments: [CH, commitment({ 7: '2034-03-08' })],
-    cutDates: [DH, cutDate], cutAmounts: [AH, [150, 150, 0, 'Pagado', '2034-03-08', '2034-03-08']], movements: [MH, expense()] });
-  assert.equal(data.dineroLibre, 900); assert.equal(data.compromisosApartados, 0); assert.equal(data.cortesPendientes, 0);
-});
-
-test('payments from previous periods do not mark current commitments paid; inactive and out-of-period items excluded', () => {
-  const data = calculate({ commitments: [CH, commitment({ 7: '2034-02-12' }), commitment({ 0: 'Inactivo', 6: 'Inactivo' }), commitment({ 0: 'Posterior', 4: 'Día 20' })] });
-  assert.equal(data.compromisosApartados, 100);
-  assert.equal(calculate({ commitments: [CH, commitment({ 4: 'Día 1' })] }).compromisosApartados, 0);
-});
-
-test('monthly commitments in a cross-month period use the occurrence month for payment reconciliation', () => {
-  const data = calculate({ today: '2034-03-30', anchor: '2034-03-30', commitments: [CH, commitment({ 4: 'Día 5', 7: '2034-03-05' })] });
-  assert.equal(data.compromisosApartados, 100);
-  const leap = calculate({ today: '2032-02-28', anchor: '2032-02-27', commitments: [CH, commitment({ 4: 'Día 31' })] });
-  assert.equal(leap.compromisosApartados, 100);
-});
-
-test('unconfirmed period, schedule or method returns null free money with explicit reasons', () => {
-  for (const [options, reason] of [[{ anchor: '' }, 'periodo_sin_confirmar'], [{ commitments: [CH, commitment({ 4: 'Por confirmar' })] }, 'regla_sin_confirmar'],
-    [{ commitments: [CH, commitment({ 5: '' })] }, 'metodo_sin_confirmar'], [{ commitments: [CH, commitment({ 5: 'Crédito sintético' })] }, 'metodo_sin_confirmar']]) {
-    const data = calculate(options); assert.equal(data.estado, 'incompleto'); assert.equal(data.dineroLibre, null);
-    assert.ok(data.pendientes.some(item => item.codigo === reason));
-  }
-});
-
-test('unlinked payments including cash never cause guessed or double deductions; future and income rows do not settle payments', () => {
-  const data = calculate({ commitments: [CH, commitment()], movements: [MH, expense()] });
-  assert.equal(data.dineroLibre, null); assert.equal(data.compromisosApartados, null);
-  assert.ok(data.pendientes.some(item => item.codigo === 'conciliar_compromiso'));
-  assert.equal(calculate({ commitments: [CH, commitment()], movements: [MH, expense({ 2: 'Ingreso' }), expense({ 0: '2034-03-11' })] }).compromisosApartados, 100);
-});
-
-test('conflicting paid/pending status, future payment and duplicates are incomplete', () => {
-  for (const row of [commitment({ 6: 'Pagado' }), commitment({ 7: '2034-03-11' }), commitment({ 6: 'Pendiente', 7: '2034-03-08' })]) {
-    assert.equal(calculate({ commitments: [CH, row] }).dineroLibre, null);
-  }
-  assert.equal(calculate({ commitments: [CH, commitment(), commitment()] }).dineroLibre, null);
 });
 
 test('only real closed payable cuts count; open/estimated, paid and later due cuts do not', () => {
@@ -100,31 +99,9 @@ test('cut inconsistencies, duplicates, carry-over overlap and unconfirmed update
     { cutDates: [DH, cutDate, cutDate], cutAmounts: [AH, cutAmount, cutAmount] },
     { cutDates: [DH, cutDate, ['Crédito sintético', '2034-01-01', '2034-01-31', '2034-02-01', '2034-02-14']], cutAmounts: [AH, cutAmount, cutAmount] },
     { cutDates: [DH, cutDate], cutAmounts: [AH, [...cutAmount.slice(0, 5), '']] },
-    { cutDates: [DH, cutDate], cutAmounts: [AH, cutAmount], movements: [MH, expense()] }
+    { cutDates: [DH, cutDate], cutAmounts: [AH, cutAmount], movements: [MH, [...expense({ 2: 'Pago tarjeta' }), 'Crédito sintético']] }
   ];
   for (const options of inputs) { const data = calculate(options); assert.equal(data.dineroLibre, null); assert.equal(data.cortesPendientes, null); }
-});
-
-test('invalid rows fail closed rather than displaying partial totals', () => {
-  for (const options of [{ commitments: [CH, commitment({ 2: '100' })] }, { commitments: [['wrong']] },
-    { movements: [MH, expense({ 0: '2034-02-30' })] }, { cutDates: [DH, cutDate], cutAmounts: [] },
-    { commitments: [CH, commitment({ 2: 0.001 })] }, { movements: [MH, null] }]) assert.throws(() => calculate(options));
-});
-
-test('ADC reads only fixed sources in one no-store snapshot; no credit totals, MSI or forecast endpoints', async () => {
-  let calls = 0;
-  const data = [[['Tarjeta'], ['Cuenta sintética']], [['Saldo disponible'], [900]], [CH, commitment()], [DH, cutDate], [AH, cutAmount], [MH]];
-  const reader = createFreeMoneyReader({ anchor: base.anchor, now: () => new Date('2034-03-10T12:00:00Z'),
-    auth: { getClient: async () => ({ getRequestHeaders: async () => ({ Authorization: 'Bearer synthetic-adc' }) }) },
-    fetchImpl: async (url, options) => {
-      calls++; assert.deepEqual(url.searchParams.getAll('ranges'), FREE_MONEY_RANGES);
-      assert.doesNotMatch(url.href, /TarjetasCredito|ComprasMSI/);
-      assert.equal(url.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE');
-      assert.equal(options.cache, 'no-store'); assert.equal(options.method, 'GET'); assert.equal(options.redirect, 'error');
-      assert.equal(options.headers.Authorization, 'Bearer synthetic-adc');
-      return { status: 200, json: async () => ({ valueRanges: data.map(values => ({ values })) }) };
-    } });
-  assert.equal((await reader()).dineroLibre, 700); await reader(); assert.equal(calls, 2);
 });
 
 test('reader sanitizes failures, missing ranges and timeout', async () => {

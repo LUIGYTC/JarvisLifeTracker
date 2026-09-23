@@ -6,14 +6,25 @@ import { createApp } from '../src/app.js';
 import { movimientoRow, TEXT_LIMITS, readMovementBody } from '../src/movimientos.js';
 import { createMovementWriter as realMovementWriter } from '../src/sheets-write.js';
 import { SPREADSHEET_ID, MOVIMIENTOS_RANGE } from '../src/config.js';
+import { aggregateDashboard } from '../src/dashboard.js';
 
 const valid = { operationId: '12345678-1234-4234-8234-123456789abc', fecha: '2024-02-29', hora: '23:59', tipo: 'Gasto', categoria: 'Prueba', monto: 1,
   descripcion: 'Registro controlado', metodo: 'Prueba', origen: 'API', textoOriginal: 'Prueba estructurada' };
-const expected = ['2024-02-29', '23:59', 'Gasto', 'Prueba', 1, 'Registro controlado', 'Prueba', 'API', 'Prueba estructurada'];
+const expected = ['2024-02-29', '23:59', 'Gasto', 'Prueba', 1, 'Registro controlado', 'Prueba', '', 'API', 'Prueba estructurada'];
 const success = () => ({ status: 200, json: async () => ({ updates: {
-  updatedRows: 1, updatedColumns: 9, updatedCells: 9, updatedRange: "'Movimientos'!A2:I2"
+  updatedRows: 1, updatedColumns: 10, updatedCells: 10, updatedRange: "'Movimientos'!A2:J2"
 } }) });
 const fakeAuth = { getClient: async () => ({ getRequestHeaders: async () => new Headers({ Authorization: 'Bearer synthetic-service-token' }) }) };
+
+test('legacy expense payloads keep compatibility while new types require distinct destinations in column H', () => {
+  assert.deepEqual(movimientoRow(valid), expected);
+  for (const tipo of ['Transferencia', 'Pago tarjeta']) {
+    const value = { ...valid, tipo, metodo: 'Débito sintético', destino: 'Destino sintético' };
+    assert.deepEqual(movimientoRow(value).slice(6), ['Débito sintético', 'Destino sintético', 'API', 'Prueba estructurada']);
+    assert.throws(() => movimientoRow({ ...value, destino: '' }));
+    assert.throws(() => movimientoRow({ ...value, destino: value.metodo }));
+  }
+});
 
 function simulatedSheet({ movementFetch, failure, missing = false, race = false } = {}) {
   const ledger = [];
@@ -126,6 +137,35 @@ test('authorized movement returns only registered and writes once', async t => {
   assert.deepEqual(writes, [valid]);
 });
 
+test('new movement types use the same endpoint and RAW append without updating balances or formulas', async t => {
+  const { request, writes } = await setup(t);
+  for (const tipo of ['Transferencia', 'Pago tarjeta']) {
+    const movement = { ...valid, tipo, metodo: 'Cuenta sintética', destino: 'Destino sintético' };
+    assert.equal((await request(JSON.stringify(movement))).status, 200);
+    const sheet = simulatedSheet();
+    assert.equal(await realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl })(movement), true);
+    assert.equal(sheet.movements.length, 1); assert.equal(sheet.movements[0].length, 10);
+    assert.deepEqual(sheet.movements[0].slice(6), ['Cuenta sintética', 'Destino sintético', 'API', 'Prueba estructurada']);
+  }
+  assert.equal(writes.length, 2);
+});
+
+test('uncategorized internal movements round-trip through endpoint, writer and dashboard with no expense or income', async t => {
+  const { request } = await setup(t);
+  for (const tipo of ['Transferencia', 'Pago tarjeta']) {
+    const movement = { ...valid, tipo, categoria: '', metodo: 'Cuenta origen', destino: 'Destino sintético' };
+    assert.equal((await request(JSON.stringify(movement))).status, 200);
+    const sheet = simulatedSheet();
+    assert.equal(await realMovementWriter({ auth: fakeAuth, fetchImpl: sheet.fetchImpl })(movement), true);
+    const result = aggregateDashboard([['Fecha', 'Hora', 'Tipo', 'Categoría', 'Monto', 'Descripción', 'Método', 'Destino'], ...sheet.movements]);
+    assert.deepEqual(result.summary, { ingresos: 0, gastos: 0, balance: 0, movimientos: 1 });
+    assert.equal(result.recent[0].tipo, tipo); assert.equal(result.recent[0].categoria, '');
+    assert.equal(result.recent[0].destino, movement.destino);
+    assert.equal(result.byCategory.length, 0);
+  }
+  for (const tipo of ['Gasto', 'Ingreso']) assert.throws(() => movimientoRow({ ...valid, tipo, categoria: '' }));
+});
+
 test('movement rejects missing, invalid and unauthorized identity before any write', async t => {
   const { request, writes } = await setup(t);
   for (const [Authorization, status] of [['', 401], ['Bearer invalid', 401], ['Bearer test.invalid.signature', 401], ['Bearer test.other.signature', 403]]) {
@@ -177,7 +217,7 @@ test('movement CORS supports only current origins and the fixed POST route', asy
   assert.equal(writes.length, 0);
 });
 
-test('ADC writer appends exactly one RAW row A:I with service credentials, no overwrite', async t => {
+test('ADC writer appends exactly one RAW row A:J with service credentials, no overwrite', async t => {
   let calls = 0;
   const writer = createMovementWriter({ auth: fakeAuth, fetchImpl: async (url, options) => {
     calls++;
@@ -221,7 +261,7 @@ test('writer failures never replay an append and endpoint returns a generic erro
       if (failure === 'network') throw new Error('synthetic sensitive provider detail');
       if (failure === 'bad-json') return { status: 200, json: async () => { throw new Error('private'); } };
       if (failure === 'wrong-range' || failure === 'two-rows') return { status: 200, json: async () => ({ updates: {
-        updatedRows: failure === 'two-rows' ? 2 : 1, updatedColumns: 9, updatedCells: 9, updatedRange: 'Other!A2:I2'
+        updatedRows: failure === 'two-rows' ? 2 : 1, updatedColumns: 10, updatedCells: 10, updatedRange: 'Other!A2:J2'
       } }) };
       return { status: failure };
     } });

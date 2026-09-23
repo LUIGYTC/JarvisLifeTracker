@@ -8,7 +8,7 @@ tiene su propio periodo de corte; ninguno de esos periodos se modifica ni se mez
 
 GET /api/gastos-tarjetas no acepta parámetros. Mantiene verificación de identidad,
 autorización por Google sub, CORS y Cache-Control: no-store existentes. Con ADC y
-acceso de solo lectura consulta los rangos fijos TarjetasCredito!A:J y Movimientos!A:G
+acceso de solo lectura consulta los rangos fijos TarjetasCredito!A:K y Movimientos!A:H
 del spreadsheet configurado. Incluye Tipo=Gasto y Método exactamente igual a un
 nombre de tarjeta existente, con Fecha dentro del periodo. Las tarjetas nuevas se
 incorporan en la siguiente consulta. No lee MSI ni CortesTarjeta ni escribe datos.

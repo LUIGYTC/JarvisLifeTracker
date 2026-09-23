@@ -6,11 +6,17 @@ import { createApp } from '../src/app.js';
 import { SPREADSHEET_ID } from '../src/config.js';
 
 // Synthetic fixtures only; never read the real spreadsheet during tests.
-const header = ['Tarjeta', 'Tipo', 'Límite', 'Utilizado', 'Disponible', '% Utilización',
-  'Día de corte', 'Última actualización', 'Fecha límite de pago', 'Domiciliada a'];
-const row = ['Prueba A', 'Crédito', 1000, 250.1, 749.9, 0.2501, 15, '2032-01-01', '2032-01-25', 'Cuenta de prueba'];
+const header = ['Tarjeta', 'Tipo', 'Límite', 'Utilizado base', 'Utilizado actual', 'Disponible', '% Utilización',
+  'Día de corte', 'Fecha/hora base', 'Fecha límite de pago', 'Domiciliada a'];
+const row = ['Prueba A', 'Crédito', 1000, 123, 250.1, 749.9, 0.2501, 15, '2032-01-01', '2032-01-25', 'Cuenta de prueba'];
 const expected = { tarjeta: 'Prueba A', tipo: 'Crédito', limite: 1000, utilizado: 250.1, disponible: 749.9,
   porcentajeUtilizacion: 25.01, diaCorte: 15, ultimaActualizacion: '2032-01-01', fechaLimitePago: '2032-01-25', domiciliadaA: 'Cuenta de prueba' };
+
+test('current formula outputs are authoritative and are never recalculated from base or limit', () => {
+  const formula = [...row]; formula[3] = 999; formula[4] = 321; formula[5] = 432; formula[6] = 0.17;
+  const card = parseTarjetas([header, formula]).tarjetas[0];
+  assert.equal(card.utilizado, 321); assert.equal(card.disponible, 432); assert.equal(card.porcentajeUtilizacion, 17);
+});
 
 test('credit cards expose exactly the ten named fields and omit unrelated sensitive columns', () => {
   const data = parseTarjetas([[...header, 'Numero', 'Credencial'], [...row, 'synthetic-secret-number', 'synthetic-secret-token']]);
@@ -19,32 +25,32 @@ test('credit cards expose exactly the ten named fields and omit unrelated sensit
 });
 
 test('credit cards normalize numeric cells, strict monetary strings, ratios and explicit percentages', () => {
-  const data = parseTarjetas([header, ['  Prueba A  ', 'Crédito', '$1,000.00', '250.10', 'MXN 749.90', '25.01%', '15', '1/1/2032', '25/1/2032', 'Cuenta de prueba']]);
+  const data = parseTarjetas([header, ['  Prueba A  ', 'Crédito', '$1,000.00', '123', '250.10', 'MXN 749.90', '25.01%', '15', '1/1/2032', '25/1/2032', 'Cuenta de prueba']]);
   assert.deepEqual(data, { tarjetas: [expected] });
-  assert.equal(parseTarjetas([header, [...row.slice(0, 5), 1, ...row.slice(6)]]).tarjetas[0].porcentajeUtilizacion, 100);
-  assert.equal(parseTarjetas([header, [...row.slice(0, 5), '0.2501', ...row.slice(6)]]).tarjetas[0].porcentajeUtilizacion, 25.01);
-  const overLimit = [...row]; overLimit[3] = 1200; overLimit[4] = -200; overLimit[5] = 1.2;
+  assert.equal(parseTarjetas([header, [...row.slice(0, 6), 1, ...row.slice(7)]]).tarjetas[0].porcentajeUtilizacion, 100);
+  assert.equal(parseTarjetas([header, [...row.slice(0, 6), '0.2501', ...row.slice(7)]]).tarjetas[0].porcentajeUtilizacion, 25.01);
+  const overLimit = [...row]; overLimit[4] = 1200; overLimit[5] = -200; overLimit[6] = 1.2;
   assert.equal(parseTarjetas([header, overLimit]).tarjetas[0].disponible, -200);
   assert.equal(parseTarjetas([header, overLimit]).tarjetas[0].porcentajeUtilizacion, 120);
 });
 
 test('credit cards support native Sheet dates and absent optional fields without inventing payment dates', () => {
   const serial = (Date.UTC(2032, 0, 1) - Date.UTC(1899, 11, 30)) / 86400000;
-  const native = [...row]; native[7] = serial + 0.5; native[8] = serial + 24;
+  const native = [...row]; native[8] = serial + 0.5; native[9] = serial + 24;
   assert.deepEqual(parseTarjetas([header, native]), { tarjetas: [expected] });
-  const partial = [...row.slice(0, 6)];
+  const partial = [...row.slice(0, 7)];
   assert.deepEqual(parseTarjetas([header, partial]).tarjetas[0], { ...expected, diaCorte: null, ultimaActualizacion: null, fechaLimitePago: null, domiciliadaA: null });
   assert.deepEqual(parseTarjetas([]), { tarjetas: [] });
   assert.deepEqual(parseTarjetas([header, [], ['', ' ']]), { tarjetas: [] });
-  const zero = [...row]; zero[2] = zero[3] = zero[4] = zero[5] = 0;
+  const zero = [...row]; zero[2] = zero[3] = zero[4] = zero[5] = zero[6] = 0;
   assert.equal(parseTarjetas([header, zero]).tarjetas[0].porcentajeUtilizacion, 0);
 });
 
 test('invalid credit card rows are skipped while valid neighbors survive; malformed tables fail closed', () => {
   for (const [index, values] of [[0, ['', '=secret', 3]], [1, [null]],
     [2, [-1, NaN, Infinity, true, null, '', '1,23', '1.000,00', '1e3', 1.001, Number.MAX_SAFE_INTEGER]],
-    [3, [-1, 0.001]], [4, ['=SUM(A1)', Infinity]], [5, [-0.1, 'bad%', Infinity, null]],
-    [6, [0, 32, 2.5]], [7, ['2032-02-30', Infinity]], [8, ['31/02/2032', '0000-01-01']], [9, ['=A1']]]) {
+    [4, [0.001]], [5, ['=SUM(A1)', Infinity]], [6, [-0.1, 'bad%', Infinity, null]],
+    [7, [0, 32, 2.5]], [8, ['2032-02-30', Infinity]], [9, ['31/02/2032', '0000-01-01']], [10, ['=A1']]]) {
     for (const value of values) {
       const invalid = [...row]; invalid[index] = value;
       assert.deepEqual(parseTarjetas([header, invalid, row, null, {}]), { tarjetas: [expected] });
@@ -55,13 +61,13 @@ test('invalid credit card rows are skipped while valid neighbors survive; malfor
   assert.throws(() => parseTarjetas(Array(10002).fill(row)));
 });
 
-test('ADC credit reader uses the configured spreadsheet and exclusively GET TarjetasCredito A:J', async () => {
+test('ADC credit reader uses the configured spreadsheet and exclusively GET TarjetasCredito A:K', async () => {
   let calls = 0;
   const auth = { getClient: async () => ({ getRequestHeaders: async () => ({ Authorization: 'Bearer synthetic-adc' }) }) };
   const reader = createTarjetasReader({ auth, fetchImpl: async (url, options) => {
     calls++;
     assert.equal(url.origin, 'https://sheets.googleapis.com');
-    assert.equal(decodeURIComponent(url.pathname), `/v4/spreadsheets/${SPREADSHEET_ID}/values/'TarjetasCredito'!A:J`);
+    assert.equal(decodeURIComponent(url.pathname), `/v4/spreadsheets/${SPREADSHEET_ID}/values/'TarjetasCredito'!A:K`);
     assert.equal(url.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE');
     assert.equal(url.searchParams.get('dateTimeRenderOption'), 'SERIAL_NUMBER');
     assert.equal(url.searchParams.get('fields'), 'values');
