@@ -79,3 +79,33 @@ Esto registra gastos programados según las reglas configuradas; no confirma un
 cargo real, no cobra al banco, no paga tarjetas y no envía notificaciones. Las
 pruebas usan un Sheet simulado con el escritor real; no ejecutan compromisos ni
 modifican datos financieros reales.
+
+## Ensayo controlado sin Google Sheets
+
+Desde la raíz del repositorio, ejecutar:
+
+```sh
+node --test --test-name-pattern="controlled HTTP rehearsal" backend/test/compromisos.test.js
+```
+
+El ensayo arranca un servidor temporal en `127.0.0.1` con puerto aleatorio y
+llama a `POST /api/compromisos/procesar`. Usa el procesador, el almacén y el
+escritor productivos con Sheets simulado en memoria. Inyecta identidad y
+credenciales ficticias solamente en la prueba; no carga `.env`, no necesita ADC
+ni modifica autenticación productiva. Un guard rechaza llamadas `fetch` fuera
+del endpoint temporal. El servidor se cierra al terminar.
+
+Se ejecuta una variante con `BBVA Crédito` y otra con `BBVA Débito`. Cada una usa
+un servicio ficticio de $12.34, vencido el 18/09/2032, y un reloj fijo al
+23/09/2032. Verifica:
+
+- Un único movimiento `Gasto / Servicios`, conservando monto y método.
+- `Último pago = 18/09/2032` y `Próxima fecha de pago = 18/10/2032`.
+- Segunda llamada sin escrituras adicionales ni movimientos duplicados.
+- Una regla operativa vencida y completa permanece intacta y excluida.
+- Al restaurar solo la fecha del fixture en memoria, otra llamada recupera las
+  fechas mediante `Operaciones` sin repetir el movimiento.
+
+No requiere otro spreadsheet ni cambiar fechas reales. Valida el contrato HTTP
+y las escrituras esperadas; no comprueba permisos reales de Google, cargos
+bancarios ni la evaluación de fórmulas en Google Sheets.

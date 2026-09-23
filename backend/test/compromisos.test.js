@@ -241,8 +241,64 @@ async function api(t, options = {}) {
     processCommitments: s.processor(), ...options });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.closeAllConnections(); server.close(); });
-  return { s, request: (options = {}, route = '/api/compromisos/procesar') => fetch(`http://127.0.0.1:${server.address().port}${route}`,
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  return { s, origin, request: (options = {}, route = '/api/compromisos/procesar') => fetch(`${origin}${route}`,
     { method: 'POST', ...options, headers: { Authorization: 'Bearer test.owner.sig', ...options.headers } }) };
+}
+
+for (const method of ['BBVA Crédito', 'BBVA Débito']) {
+  test(`controlled HTTP rehearsal: monthly commitment with ${method}, no external fetch`, async t => {
+    const nativeFetch = globalThis.fetch;
+    let allowedOrigin, blockedCalls = 0;
+    // Installed before constructing the app: an accidentally uninjected Sheets
+    // client must fail rather than fall back to a real Google fetch.
+    t.mock.method(globalThis, 'fetch', (input, options) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      if (url.origin !== allowedOrigin || url.pathname !== '/api/compromisos/procesar') {
+        blockedCalls++;
+        throw new Error('External fetch forbidden in controlled rehearsal');
+      }
+      return nativeFetch(input, options);
+    });
+    const { s, origin, request } = await api(t);
+    allowedOrigin = origin;
+    const commitment = row(); commitment[5] = method;
+    const rule = [...row()]; rule[0] = 'Regla ficticia'; rule[1] = 'Regla operativa';
+    // A complete, overdue rule proves exclusion is by type, not missing fields.
+    s.rows = [header, [...commitment], [...rule]];
+    const first = await request();
+    assert.equal(first.status, 200); assert.equal(first.headers.get('cache-control'), 'no-store');
+    assert.deepEqual((await first.json()).resultados, [
+      { compromiso: commitment[0], fechaProgramada: '2032-09-18', proximaFecha: '2032-10-18', estado: 'procesado' },
+      { compromiso: rule[0], estado: 'omitido', motivo: 'regla_operativa' }
+    ]);
+    assert.equal(s.movements.length, 1);
+    assert.deepEqual(s.movements[0].slice(0, 9), ['2032-09-18', '00:00', 'Gasto', 'Servicios', 12.34,
+      commitment[0], method, '', 'Jarvis']);
+    assert.match(s.movements[0][9], /Generado automáticamente desde Compromisos/);
+    assert.equal(s.rows[1][7], serial('2032-09-18'));
+    assert.equal(s.rows[1][4], serial('2032-10-18'));
+    assert.deepEqual(s.rows[2], rule);
+    assert.equal(s.ledger.length, 1); assert.equal(s.ledger[0][2], 'registered');
+    const snapshot = structuredClone({ rows: s.rows, movements: s.movements, ledger: s.ledger });
+    const writes = s.calls.filter(call => call.method !== 'GET').length;
+
+    const second = await request(); assert.equal(second.status, 200);
+    assert.deepEqual((await second.json()).resultados, [
+      { compromiso: commitment[0], estado: 'omitido', motivo: 'futuro' },
+      { compromiso: rule[0], estado: 'omitido', motivo: 'regla_operativa' }
+    ]);
+    assert.deepEqual({ rows: s.rows, movements: s.movements, ledger: s.ledger }, snapshot);
+    assert.equal(s.calls.filter(call => call.method !== 'GET').length, writes);
+
+    // Also exercise persistent deduplication over HTTP, not only the future-date
+    // shortcut: restore the original schedule in the in-memory fixture only.
+    s.rows[1] = [...commitment];
+    const retry = await request(); assert.equal(retry.status, 200);
+    assert.equal((await retry.json()).resultados[0].estado, 'recuperado');
+    assert.deepEqual({ rows: s.rows, movements: s.movements, ledger: s.ledger }, snapshot);
+    assert.equal(blockedCalls, 0);
+  });
 }
 
 test('authenticated endpoint integrates processor and Sheets writer, no-store on every repeated invocation', async t => {
