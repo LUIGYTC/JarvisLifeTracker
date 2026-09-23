@@ -35,13 +35,19 @@ function percentage(value) {
   if (points < 0 || !Number.isSafeInteger(Math.round(points * 100))) invalid();
   return Math.round(points * 100) / 100;
 }
-function date(value) {
+function date(value, withTime = false) {
   if (empty(value)) return null;
   if (typeof value === 'number' && value >= 1 && value < 2958466) {
     value = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000).toISOString().slice(0, 10);
   }
   if (typeof value !== 'string') invalid();
   value = value.trim();
+  // Fecha/hora base may be stored as text, even with UNFORMATTED_VALUE.
+  // Keep its civil date for the existing JSON contract; never infer a timezone.
+  if (withTime) {
+    const timestamp = /^(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})[ T](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.exec(value);
+    if (timestamp) value = timestamp[1];
+  }
   const local = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
   if (local) value = `${local[3]}-${local[2].padStart(2, '0')}-${local[1].padStart(2, '0')}`;
   if (!/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(value)) invalid();
@@ -61,9 +67,11 @@ export function parseTarjetas(values = []) {
       if (diaCorte !== null && (!Number.isInteger(diaCorte) || diaCorte < 1 || diaCorte > 31)) invalid();
       tarjetas.push({ tarjeta: label(row[0]), tipo: label(row[1]), limite: money(row[2]),
         utilizado: money(row[4]), disponible: money(row[5], true), porcentajeUtilizacion: percentage(row[6]),
-        diaCorte, ultimaActualizacion: date(row[8]), fechaLimitePago: date(row[9]), domiciliadaA: label(row[10], true) });
+        diaCorte, ultimaActualizacion: date(row[8], true), fechaLimitePago: date(row[9]), domiciliadaA: label(row[10], true) });
     } catch { /* Skip invalid rows without logging financial data. */ }
   }
+  // A rejected dataset is unavailable, not an empty registry.
+  if (!tarjetas.length && values.slice(1).some(row => !Array.isArray(row) || !row.every(empty))) invalid();
   return { tarjetas };
 }
 

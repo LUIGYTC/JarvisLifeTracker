@@ -61,6 +61,39 @@ test('invalid credit card rows are skipped while valid neighbors survive; malfor
   assert.throws(() => parseTarjetas(Array(10002).fill(row)));
 });
 
+test('text base timestamps preserve their civil dates without recalculating Sheet values', () => {
+  for (const timestamp of ['2032-01-01 23:59', '2032-01-01T00:00', '2032-01-01 12:34:56', '1/1/2032 23:59']) {
+    const input = [...row]; input[8] = timestamp;
+    assert.deepEqual(parseTarjetas([header, input]), { tarjetas: [expected] });
+  }
+});
+
+test('malformed base timestamps cannot masquerade as an empty card registry', () => {
+  for (const timestamp of ['2032-02-30 23:59', '2032-01-01 24:00', '2032-01-01 12:60',
+    '2032-01-01 12:34:60', '2032-01-01 23:59garbage', '2032-01-01 23:59+06:00']) {
+    const input = [...row]; input[8] = timestamp;
+    assert.throws(() => parseTarjetas([header, input]));
+    assert.deepEqual(parseTarjetas([header, input, row]), { tarjetas: [expected] });
+  }
+  assert.deepEqual(parseTarjetas([header, []]), { tarjetas: [] });
+});
+
+test('reader and endpoint return unavailable for all rejected rows instead of successful empty JSON', async t => {
+  const input = [...row]; input[8] = 'invalid timestamp';
+  const readTarjetas = createTarjetasReader({
+    auth: { getClient: async () => ({ getRequestHeaders: async () => ({}) }) },
+    fetchImpl: async () => ({ status: 200, json: async () => ({ values: [header, input] }) })
+  });
+  const server = createApp({ authorizedSub: 'owner', verify: async () => 'owner', readTarjetas });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/tarjetas-credito`, {
+    headers: { Authorization: 'Bearer test.owner.signature' }
+  });
+  assert.equal(response.status, 503); assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { error: 'tarjetas_unavailable' });
+});
+
 test('ADC credit reader uses the configured spreadsheet and exclusively GET TarjetasCredito A:K', async () => {
   let calls = 0;
   const auth = { getClient: async () => ({ getRequestHeaders: async () => ({ Authorization: 'Bearer synthetic-adc' }) }) };

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { once } = require('node:events');
 const source = fs.readFileSync(path.join(__dirname, '../tarjetas-credito.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const card = (overrides = {}) => ({ tarjeta: 'Sintética A', tipo: 'Crédito', limite: 1000, utilizado: 100,
@@ -20,6 +21,54 @@ function setup() {
   const view = window.JarvisTarjetas.mount(root);
   return { root, view };
 }
+
+test('four cards with the live Sheet data shapes survive reader, authenticated JSON and frontend rendering', async t => {
+  const { createTarjetasReader } = await import('../backend/src/tarjetas-credito.js');
+  const { createApp } = await import('../backend/src/app.js');
+  // Anonymized regression: same column types, text timestamps and missing
+  // optional cells as the four live rows; no real balances/names/dates stored.
+  const values = [
+    ['Tarjeta', 'Tipo', 'Límite', 'Utilizado base', 'Utilizado actual', 'Disponible', '% Utilización',
+      'Día de corte', 'Fecha/hora base', 'Fecha límite de pago', 'Domiciliada a'],
+    ['Sintética A', 'Crédito', 1000, 100, 321, 432, 0.17, 24, '2032-01-19 23:59', '14/02/2032'],
+    ['Sintética B', 'Crédito', 2000, 234.56, 234.56, 1765.44, 0.11728, 21, '2032-01-19 23:59', '10/02/2032', 'Cuenta sintética'],
+    ['Sintética C', 'Crédito', 3000, 456.78, 456.78, 2543.22, 0.15226, 21, '2032-01-19 23:59'],
+    ['Sintética D', 'Crédito', 4000, 50, 50, 3950, 0.0125, '', '2032-01-19 23:59', '09/02/2032']
+  ];
+  const readTarjetas = createTarjetasReader({
+    auth: { getClient: async () => ({ getRequestHeaders: async () => ({}) }) },
+    fetchImpl: async (url, options) => {
+      assert.match(decodeURIComponent(url.pathname), /TarjetasCredito'!A:K$/);
+      assert.equal(url.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE');
+      assert.equal(options.method, 'GET');
+      return { status: 200, json: async () => ({ values }) };
+    }
+  });
+  const server = createApp({ authorizedSub: 'owner', verify: async () => 'owner', readTarjetas });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const { root, view } = setup();
+  view.setReader(async signal => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/tarjetas-credito`, {
+      signal, headers: { Authorization: 'Bearer test.owner.signature' }, cache: 'no-store'
+    });
+    assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
+    const data = await response.json();
+    assert.equal(data.tarjetas.length, 4);
+    for (let i = 0; i < 4; i++) {
+      assert.equal(data.tarjetas[i].utilizado, values[i + 1][4]);
+      assert.equal(data.tarjetas[i].disponible, values[i + 1][5]);
+      assert.equal(data.tarjetas[i].ultimaActualizacion, '2032-01-19');
+    }
+    assert.equal(data.tarjetas[0].porcentajeUtilizacion, 17);
+    assert.equal(data.tarjetas[2].fechaLimitePago, null); assert.equal(data.tarjetas[3].diaCorte, null);
+    return data;
+  });
+  await view.open();
+  assert.equal((root.innerHTML.match(/class="card credit-card"/g) || []).length, 4);
+  for (const input of values.slice(1)) assert.ok(root.innerHTML.includes(input[0]));
+  assert.doesNotMatch(root.innerHTML, /No hay tarjetas de crédito registradas|No se pudieron cargar/);
+});
 
 test('credit overview loads lazily, renders MXN and uses utilized debt shares rather than limits', async () => {
   const { root, view } = setup(); let calls = 0;
