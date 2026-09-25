@@ -76,7 +76,7 @@ test('commitment processing never enters the service worker cache', () => {
 
 test('update reloads configuration and removes the previous app cache on activation', async () => {
   const handlers = {};
-  const oldCache = 'jarvislifetracker:/JarvisLifeTracker/:2.3.17';
+  const oldCache = 'jarvislifetracker:/JarvisLifeTracker/:2.3.21';
   const unrelated = 'jarvislifetracker:/another-project/:2.3.1';
   const stored = new Map([[oldCache, new Map()], [unrelated, new Map()]]);
   let installedCache;
@@ -113,7 +113,7 @@ test('update reloads configuration and removes the previous app cache on activat
   handlers.install({ waitUntil: promise => { pending = promise; } });
   await pending;
   assert.notEqual(installedCache, oldCache);
-  assert.equal(installedCache, 'jarvislifetracker:/JarvisLifeTracker/:2.3.21');
+  assert.equal(installedCache, 'jarvislifetracker:/JarvisLifeTracker/:2.3.22');
   assert.ok(requests.some(request => request.url === base + 'config.js'));
   assert.ok(requests.some(request => request.url === base + 'tarjetas-credito.js'));
   assert.ok(requests.some(request => request.url === base + 'gastos-tarjetas.js'));

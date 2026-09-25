@@ -41,6 +41,7 @@
     const routineContent = root.querySelector('#rutinas-content');
     const calendar = window.JarvisRutinas.mount(routineContent);
     function showFinance(section) {
+      if (section !== 'tarjetas') credit.close();
       financeSection = section;
       freeContent.hidden = section !== 'movimientos';
       if (active && section === 'movimientos') free.open();
@@ -60,6 +61,7 @@
     creditButton.onclick = () => { if (active) showFinance('tarjetas'); };
     function show(view) {
       if (!active || !['home', 'finanzas', 'rutinas'].includes(view)) return;
+      if (view !== 'finanzas') credit.close();
       current = view;
       home.hidden = view !== 'home';
       finance.hidden = view !== 'finanzas';

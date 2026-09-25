@@ -112,7 +112,8 @@
       root.innerHTML = `<div class="shell credit-overview"><header class="top"><h1>Tarjetas de crédito</h1></header>${body}</div>`;
     }
     async function open() {
-      if (!reader || state === 'loading' || state === 'loaded') return;
+      if (!reader) return;
+      close();
       const attempt = ++generation;
       controller = new AbortController();
       const signal = controller.signal;
@@ -174,15 +175,18 @@
       render(overview(cards, total));
       root.querySelector?.(`[data-credit-card="${index}"]`)?.focus({ preventScroll: true });
     }
-    function reset() {
+    function close() {
       cancelDetail();
-      cards = []; total = 0; selected = null; movementReader = null; msiReader = null; nextCutReader = null;
+      cards = []; total = 0; selected = null;
       generation++;
       controller?.abort();
       controller = null;
-      reader = null;
       state = 'idle';
       root.innerHTML = '';
+    }
+    function reset() {
+      close();
+      reader = null; movementReader = null; msiReader = null; nextCutReader = null;
     }
     root.onclick = event => {
       if (event.target.closest('[data-credit-retry]') && state === 'error') open();
@@ -198,7 +202,7 @@
       const card = event.target.closest('[data-credit-card]');
       if (card && ['Enter', ' '].includes(event.key)) { event.preventDefault(); select(Number(card.dataset.creditCard)); }
     };
-    return Object.freeze({ open, reset, setReader(value) { reset(); reader = value; }, setMovementsReader(value) { movementReader = value; }, setMSIReader(value) { msiReader = value; }, setNextCutReader(value) { nextCutReader = value; } });
+    return Object.freeze({ open, close, reset, setReader(value) { reset(); reader = value; }, setMovementsReader(value) { movementReader = value; }, setMSIReader(value) { msiReader = value; }, setNextCutReader(value) { nextCutReader = value; } });
   }
   window.JarvisTarjetas = Object.freeze({ mount });
 })();

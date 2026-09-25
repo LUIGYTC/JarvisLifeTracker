@@ -74,9 +74,9 @@ test('credit overview loads lazily, renders MXN and uses utilized debt shares ra
   const { root, view } = setup(); let calls = 0;
   view.setReader(async () => { calls++; return { tarjetas: [card(), card({ tarjeta: 'Sintética B', utilizado: 300, limite: 1000, disponible: 700, porcentajeUtilizacion: 30 })] }; });
   assert.equal(calls, 0);
-  const pending = view.open(); view.open();
+  const pending = view.open();
   assert.match(root.innerHTML, /Cargando tarjetas/);
-  await pending; await view.open(); assert.equal(calls, 1);
+  await pending; assert.equal(calls, 1);
   assert.match(root.innerHTML, /Distribución de deuda/);
   assert.match(root.innerHTML, /stroke-dasharray="25 75"/);
   assert.match(root.innerHTML, /stroke-dasharray="75 25"/);
@@ -140,6 +140,51 @@ test('reset or replacing the reader aborts pending loads and stale results canno
 test('credit frontend has no embedded card fixtures or persistence and is wired into public assets', () => {
   assert.doesNotMatch(source, /BBVA|Rappi|Mercado Pago|Liverpool|Sintética|2032-01-25|localStorage|sessionStorage|indexedDB|document\.cookie|caches\./i);
   assert.match(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8'), /src="\.\/tarjetas-credito\.js"/);
+});
+
+test('each opening fetches fresh cards, removes retained balances during loading and on failure', async () => {
+  const { root, view } = setup(); let calls = 0, fail = false;
+  view.setReader(async () => {
+    calls++; if (fail) throw Error('offline');
+    return { tarjetas: [card({ utilizado: calls === 1 ? 100 : 250, disponible: calls === 1 ? 900 : 750 })] };
+  });
+  await view.open(); assert.equal(calls, 1); assert.match(root.innerHTML, /\$900.00/);
+  view.close(); assert.equal(root.innerHTML, '');
+  const second = view.open(); assert.match(root.innerHTML, /Cargando tarjetas/);
+  assert.doesNotMatch(root.innerHTML, /\$900.00/);
+  await second; assert.equal(calls, 2); assert.match(root.innerHTML, /\$750.00/);
+  assert.doesNotMatch(root.innerHTML, /\$900.00/);
+  fail = true; await view.open(); assert.equal(calls, 3);
+  assert.match(root.innerHTML, /No se pudieron cargar/); assert.doesNotMatch(root.innerHTML, /\$750.00|\$900.00/);
+});
+
+test('leaving and overlapping openings abort prior requests and reject late successes and failures', async () => {
+  const { root, view } = setup(); const requests = [];
+  view.setReader(signal => new Promise((resolve, reject) => requests.push({ signal, resolve, reject })));
+  const first = view.open(); view.close(); assert.equal(requests[0].signal.aborted, true);
+  const second = view.open(); const third = view.open();
+  assert.equal(requests[1].signal.aborted, true);
+  requests[2].resolve({ tarjetas: [card({ tarjeta: 'Nueva' })] }); await third;
+  const latest = root.innerHTML;
+  requests[0].resolve({ tarjetas: [card({ tarjeta: 'Antigua' })] }); await first;
+  requests[1].reject(Error('late error')); await second;
+  assert.equal(root.innerHTML, latest); assert.match(latest, /Nueva/);
+});
+
+test('closing the section cancels all detail readers and keeps them available after reopening', async () => {
+  const { root, view } = setup(); const pending = [];
+  view.setReader(async () => ({ tarjetas: [card()] }));
+  const read = (_, signal) => new Promise(resolve => pending.push({ signal, resolve }));
+  view.setMovementsReader(read); view.setMSIReader(read); view.setNextCutReader(read);
+  await view.open(); action(root, '[data-credit-card]', 0);
+  assert.equal(pending.length, 3); view.close();
+  assert.ok(pending.every(request => request.signal.aborted));
+  await view.open(); const current = root.innerHTML;
+  for (const request of pending) request.resolve({});
+  await settle(); assert.equal(root.innerHTML, current);
+  action(root, '[data-credit-card]', 0); assert.equal(pending.length, 6);
+  view.close(); for (const request of pending.slice(3)) request.resolve({}); await settle();
+  assert.equal(root.innerHTML, '');
 });
 
 function action(root, selector, index, key) {

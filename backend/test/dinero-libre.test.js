@@ -50,6 +50,73 @@ test('commitments are displayed without interpreting rules, reserving funds or e
   assert.equal(calculate({}).dineroLibre, 900);
 });
 
+test('operating rules retain empty evaluated amounts as null without becoming fixed deductions', () => {
+  for (const monto of ['', '   ', null, undefined]) {
+    const rule = commitment({ 0: 'Pago de tarjetas', 1: 'Regla operativa', 2: monto, 5: 'CortesTarjeta' });
+    const data = calculate({ commitments: [CH, commitment(), rule] });
+    assert.equal(data.compromisosInformativos.length, 2);
+    assert.deepEqual(data.compromisosInformativos[1], { nombre: 'Pago de tarjetas', tipo: 'Regla operativa',
+      monto: null, frecuencia: 'Mensual', proximaFechaPago: '2034-03-12', metodo: 'CortesTarjeta', estado: 'Activo' });
+    assert.equal(data.compromisosInformativos[0].monto, 100);
+    assert.deepEqual(data.compromisos, []); assert.equal(data.compromisosApartados, null);
+    assert.equal(data.dineroDisponible, 900); assert.equal(data.dineroLibre, null);
+    assert.deepEqual(data.pendientes, [{ codigo: 'compromisos_solo_lectura', nombre: '' }]);
+  }
+  // The exception depends on Tipo, not on a special commitment name.
+  assert.equal(calculate({ commitments: [CH, commitment({ 1: 'Regla operativa', 2: '' })] }).compromisosInformativos[0].monto, null);
+});
+
+test('active normal commitments still reject empty amounts and operating rules validate nonempty amounts', () => {
+  for (const tipo of ['Gasto fijo', 'Apartado', 'Domiciliado', 'Suscripción']) {
+    for (const monto of ['', ' ', null, undefined]) {
+      assert.throws(() => calculate({ commitments: [CH, commitment({ 0: 'Pago de tarjetas', 1: tipo, 2: monto })] }), /Invalid free money data/);
+    }
+  }
+  for (const monto of ['#VALUE!', '=IF(A1,1,"")', '100', -1, NaN, Infinity, 1.001]) {
+    assert.throws(() => calculate({ commitments: [CH, commitment({ 1: 'Regla operativa', 2: monto })] }), /Invalid free money data/);
+  }
+  for (const monto of [0, 12.34]) {
+    assert.equal(calculate({ commitments: [CH, commitment({ 1: 'Regla operativa', 2: monto })] }).compromisosInformativos[0].monto, monto);
+  }
+});
+
+test('current Compromisos schema with an empty formula result survives Sheets reader and authenticated JSON', async t => {
+  // Current ten-column layout, evaluated formula result and synthetic finances.
+  const commitments = [[...CH, 'Nota', 'Origen'],
+    [...commitment({ 0: 'Servicio ficticio', 1: 'Suscripción', 4: '12/03/2034' }), 'Nota privada', 'Origen privado'],
+    [...commitment({ 0: 'Pago de tarjetas', 1: 'Regla operativa', 2: '', 4: '01/04/2034', 5: 'CortesTarjeta' }), 'Regla dinámica', 'Origen privado']];
+  const values = [[['Cuenta'], ['Cuenta sintética']], [['Saldo disponible / valor actual'], [900]],
+    [['Tipo'], ['Débito']], commitments, [DH], [AH], [MH]];
+  let reads = 0;
+  const readFreeMoney = createFreeMoneyReader({ anchor: base.anchor, now: () => new Date('2034-03-10T12:00:00Z'),
+    auth: { getClient: async () => ({ getRequestHeaders: async () => ({}) }) },
+    fetchImpl: async (url, options) => {
+      reads++; assert.equal(options.method, 'GET'); assert.equal(options.cache, 'no-store');
+      assert.equal(url.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE');
+      assert.deepEqual(url.searchParams.getAll('ranges'), FREE_MONEY_RANGES);
+      // A:H excludes Nota and Origen, just as the actual reader requests.
+      return { status: 200, json: async () => ({ valueRanges: values.map((rows, i) => ({ values: i === 3 ? rows.map(row => row.slice(0, 8)) : rows })) }) };
+    } });
+  const server = createApp({ authorizedSub: 'owner', verify: async () => 'owner', readFreeMoney });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${server.address().port}/api/dinero-libre`;
+  const headers = { Authorization: 'Bearer test.owner.signature' };
+  const response = await fetch(url, { headers });
+  assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
+  const data = await response.json();
+  assert.equal(data.compromisosInformativos[1].monto, null);
+  assert.equal(data.compromisosInformativos[1].nombre, 'Pago de tarjetas');
+  assert.equal(data.compromisosInformativos[0].monto, 100);
+  assert.equal(data.cortesPendientes, 0); assert.deepEqual(data.compromisos, []);
+  assert.doesNotMatch(JSON.stringify(data), /Nota privada|Origen privado/);
+  commitments[1][2] = ''; // Ordinary active subscription remains invalid.
+  const invalid = await fetch(url, { headers });
+  assert.equal(invalid.status, 503);
+  assert.deepEqual(await invalid.json(), { error: 'free_money_unavailable' });
+  assert.equal(reads, 2);
+});
+
 test('only card payments to the relevant destination trigger reconciliation, never transfers or ordinary expenses', () => {
   const cuts = { cutDates: [DH, cutDate], cutAmounts: [AH, cutAmount] };
   for (const row of [expense(), [...expense({ 2: 'Transferencia' }), 'Otra cuenta'], [...expense({ 2: 'Pago tarjeta' }), 'Otra tarjeta']]) {

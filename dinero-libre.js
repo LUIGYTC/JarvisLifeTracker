@@ -27,7 +27,8 @@
       [...data.compromisos, ...data.cortes].some(item => !item || typeof item.nombre !== 'string' || !cents(item.monto) || item.monto < 0) ||
       data.pendientes.some(item => !item || !Object.hasOwn(reasons, item.codigo) || typeof item.nombre !== 'string')) throw Error('Invalid data');
     const information = data.compromisosInformativos || [];
-    if (!Array.isArray(information) || information.some(item => !item || !cents(item.monto) || item.monto < 0 ||
+    if (!Array.isArray(information) || information.some(item => !item ||
+      (!(item.tipo === 'Regla operativa' && item.monto === null) && (!cents(item.monto) || item.monto < 0)) ||
       ['nombre', 'tipo', 'frecuencia', 'estado'].some(key => typeof item[key] !== 'string') ||
       ['proximaFechaPago', 'metodo'].some(key => item[key] !== null && typeof item[key] !== 'string'))) throw Error('Invalid commitments');
     const complete = data.estado === 'completo';
@@ -39,7 +40,7 @@
       ${data.periodo ? `<p class="muted">Catorcena: ${escape(data.periodo.inicio)} – ${escape(data.periodo.fin)}</p>` : ''}
       <dl class="free-summary">${[['Dinero disponible', data.dineroDisponible], ['Compromisos apartados', data.compromisosApartados], ['Cortes pendientes', data.cortesPendientes]].map(([name, value]) => `<div><dt>${name}</dt><dd>${amount(value)}</dd></div>`).join('')}</dl>
       ${data.compromisos.length || data.cortes.length ? `<p class="muted">${complete ? 'Desglose de descuentos' : 'Descuentos confirmados · cálculo aún incompleto'}</p><ul class="free-details">${[...data.compromisos.map(item => ({ ...item, label: item.nombre })), ...data.cortes.map(item => ({ ...item, label: `${item.nombre} · Corte ${item.fechaCorte}` }))].map(item => `<li><span>${escape(item.label)}</span><strong>−${money.format(item.monto)}</strong></li>`).join('')}</ul>` : complete ? '<p class="muted">Sin compromisos ni cortes pendientes en este periodo.</p>' : ''}
-      ${information.length ? `<h3>Compromisos · solo consulta</h3><ul class="free-details">${information.map(item => `<li><span>${escape(item.nombre)} · ${escape(item.frecuencia)} · ${escape(item.estado)}<br><span class="muted">Próximo pago: ${escape(item.proximaFechaPago ?? 'Por confirmar')} · Método: ${escape(item.metodo ?? 'Por confirmar')}</span></span><strong>${money.format(item.monto)}</strong></li>`).join('')}</ul>` : ''}
+      ${information.length ? `<h3>Compromisos · solo consulta</h3><ul class="free-details">${information.map(item => `<li><span>${escape(item.nombre)} · ${escape(item.frecuencia)} · ${escape(item.estado)}<br><span class="muted">Próximo pago: ${escape(item.proximaFechaPago ?? 'Por confirmar')} · Método: ${escape(item.metodo ?? 'Por confirmar')}</span></span><strong>${item.monto === null ? 'Monto dinámico' : money.format(item.monto)}</strong></li>`).join('')}</ul>` : ''}
       ${complete ? '' : `<div class="free-incomplete" role="status"><p>Cálculo incompleto. Dinero libre aún no está determinado.</p><ul>${data.pendientes.map(item => `<li>${item.nombre ? `${escape(item.nombre)}: ` : ''}${reasons[item.codigo]}</li>`).join('')}</ul></div>`}`;
   }
   function mount(root) {

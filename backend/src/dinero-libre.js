@@ -49,7 +49,8 @@ export function calculateFreeMoney({ available, commitments = [], cutDates = [],
   // Phase boundary: recurring rules are informational, never executed or reserved.
   const compromisosInformativos = rows(commitments, ['Compromiso', 'Tipo', 'Monto', 'Frecuencia', 'Próxima fecha de pago', 'Método', 'Estado', 'Último pago'])
     .filter(row => !row.every(blank)).map(row => ({ nombre: label(row[0]), tipo: label(row[1]),
-      monto: cents(row[2]) / 100, frecuencia: label(row[3]),
+      // An evaluated empty formula is valid for dynamic operating rules only.
+      monto: label(row[1]) === 'Regla operativa' && blank(row[2]) ? null : cents(row[2]) / 100, frecuencia: label(row[3]),
       proximaFechaPago: blank(row[4]) ? null : typeof row[4] === 'number' ? dateText(row[4]) : label(row[4]),
       metodo: blank(row[5]) ? null : label(row[5]), estado: label(row[6]) }));
   if (compromisosInformativos.length) issue('compromisos_solo_lectura');

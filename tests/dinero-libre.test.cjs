@@ -24,6 +24,33 @@ test('current commitments are informational and escaped, with no deduction sign 
   for (const text of ['Compromisos · solo consulta', 'Servicio &lt;nuevo&gt;', 'Próximo pago: 2034-04-15', '$123.00', 'no se apartan ni ejecutan automáticamente']) assert.ok(root.innerHTML.includes(text));
   assert.doesNotMatch(root.innerHTML, /−\$123|<nuevo>|Descuentos confirmados/);
 });
+
+test('dynamic operating amount renders as text without changing backend totals or fixed deductions', async () => {
+  const { root, view } = setup();
+  const rule = { nombre: 'Pago de tarjetas', tipo: 'Regla operativa', monto: null, frecuencia: 'Mensual',
+    proximaFechaPago: null, metodo: 'CortesTarjeta', estado: 'Activo' };
+  const payload = { ...data, compromisosInformativos: [rule, { ...rule, nombre: 'Servicio', tipo: 'Suscripción', monto: 12.34 }] };
+  const original = JSON.stringify(payload);
+  view.setReader(async () => payload); await view.open();
+  assert.match(root.innerHTML, /Monto dinámico/); assert.match(root.innerHTML, /\$12.34/);
+  assert.match(root.innerHTML, /class="free-total">\$700.00/);
+  assert.doesNotMatch(root.innerHTML, /No pudimos|\$0.00|−\$12.34/);
+  assert.equal(JSON.stringify(payload), original);
+  view.setReader(async () => ({ ...incomplete, compromisosInformativos: [rule] })); await view.open();
+  assert.match(root.innerHTML, /Monto dinámico/); assert.match(root.innerHTML, /Cálculo incompleto/);
+});
+
+test('missing normal amounts and malformed operating amounts remain invalid', async () => {
+  const { root, view } = setup();
+  for (const [tipo, amounts] of [['Suscripción', [null, undefined, '']], ['Regla operativa', [undefined, '', '12', -1, NaN]]]) {
+    for (const monto of amounts) {
+      view.setReader(async () => ({ ...incomplete, compromisosInformativos: [{ nombre: 'Pago de tarjetas', tipo, monto,
+        frecuencia: 'Mensual', proximaFechaPago: null, metodo: null, estado: 'Activo' }] }));
+      await view.open(); assert.match(root.innerHTML, /No pudimos calcular/);
+      assert.doesNotMatch(root.innerHTML, /Monto dinámico/);
+    }
+  }
+});
 test('free money is primary, gross remains labeled, deductions and dynamic escaped breakdown render in MXN', async () => {
   const { root, view } = setup(); view.setReader(async () => data); await view.open();
   assert.match(root.innerHTML, /class="free-total">\$700.00/);
